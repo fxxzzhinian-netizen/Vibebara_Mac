@@ -78,14 +78,14 @@ curl http://localhost:8000/health       # {"status":"healthy",...}
 ### 2. 本机：启动桌面壳（PowerShell，连云端后端）
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "https://你的域名/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "wss://你的域名"
+$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
 .\build-desktop.ps1 -Quick -NoBe
 ```
 
 > - `-NoBe`：不在本机起后端，直连云端。
 > - 首次或代码刚更新用上面这条（重建前端 + 桌面壳 + 本地代理三件套）；代码没改想秒开加 `-Quick`：`.\build-desktop.ps1 -Quick -NoBe`。
-> - 远程连接强制使用 HTTPS/WSS；请先用域名和 TLS 反向代理把公网 443 转发到后端 8000，后端端口不要直接暴露公网。
+> - 当前测试服务器尚未部署 TLS，暂时使用 HTTP/WS；登录凭据会以明文链路传输，不应扩大到正式外部发布。
 
 ---
 
@@ -97,7 +97,7 @@ $env:VIBEBARA_CLOUD_WS_BASE  = "wss://你的域名"
 
 - 一台 Linux 云服务器（Ubuntu 推荐），有公网 IP
 - Docker 20+ 及 Docker Compose 插件
-- 安全组仅放行 `443/tcp`；由 TLS 反向代理转发到容器后端 `8000`
+- 当前测试环境安全组放行 `8000/tcp`
 
 > 国内云服务器安装 Docker 建议使用阿里云/腾讯云镜像源，详见下方「国内环境注意事项」。
 
@@ -242,8 +242,8 @@ docker compose build --build-arg APT_MIRROR=mirrors.aliyun.com backend
 云端后端已在服务器部署后，开发者本机只需指定服务器地址：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "https://你的域名/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "wss://你的域名"
+$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
 .\build-desktop.ps1 -NoBe     # 不启动本地后端，直连云端
 ```
 
@@ -300,8 +300,8 @@ cd ..
 - **环境变量**（联调优先级最高）：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "https://你的域名/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "wss://你的域名"
+$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
 $env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 ```
 
@@ -309,13 +309,13 @@ $env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 
 ```json
 {
-  "cloudApiBase": "https://你的域名/api/v1",
-  "cloudWsBase": "wss://你的域名",
+  "cloudApiBase": "http://43.136.128.162:8000/api/v1",
+  "cloudWsBase": "ws://43.136.128.162:8000",
   "updateUrl": "https://你的更新域名/desktop/"
 }
 ```
 
-安装包不内置明文公网地址；首次启动前必须通过环境变量或上述配置文件提供 HTTPS/WSS。
+安装包当前内置上述 HTTP/WS 测试地址，也可通过环境变量或配置文件覆盖。
 正式构建会生成更新元数据，把 `desktop/release/` 中安装包、blockmap 和 `latest.yml`
 同步到 `VIBEBARA_UPDATE_URL` 对应的静态存储即可启用自动更新。
 

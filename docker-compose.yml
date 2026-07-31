@@ -77,7 +77,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-qwen-plus}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     depends_on:
       mysql:
         condition: service_healthy

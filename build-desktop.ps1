@@ -38,7 +38,9 @@ $agentDir     = Join-Path $ROOT "local-agent"
 $desktopDir   = Join-Path $ROOT "desktop"
 $venvPython   = Join-Path $backendDir ".venv\Scripts\python.exe"
 
-# -NoBe 直连云端必须显式提供 HTTPS/WSS 地址；不再回退到公开 IP 的明文 HTTP/WS。
+# 当前线上尚未部署 TLS，-NoBe 暂时回退到现有 HTTP/WS 公网地址。
+$DEFAULT_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
+$DEFAULT_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
 
 # ── 工具函数 ────────────────────────────────────────────────
 
@@ -249,15 +251,13 @@ if (-not $NoBe) {
     Start-Backend
 }
 else {
-    # -NoBe：凭据会发往远端，必须显式配置 TLS 地址。
-    if (-not $env:VIBEBARA_CLOUD_API_BASE -or -not $env:VIBEBARA_CLOUD_WS_BASE) {
-        throw "-NoBe 需要显式设置 VIBEBARA_CLOUD_API_BASE=https://... 和 VIBEBARA_CLOUD_WS_BASE=wss://..."
-    }
-    if (-not $env:VIBEBARA_CLOUD_API_BASE.StartsWith("https://") -or
-        -not $env:VIBEBARA_CLOUD_WS_BASE.StartsWith("wss://")) {
-        throw "远程云端地址必须使用 HTTPS/WSS，拒绝明文 HTTP/WS"
-    }
+    # -NoBe：不在本机起后端，未显式配置时连接当前测试服务器。
+    if (-not $env:VIBEBARA_CLOUD_API_BASE) { $env:VIBEBARA_CLOUD_API_BASE = $DEFAULT_CLOUD_API_BASE }
+    if (-not $env:VIBEBARA_CLOUD_WS_BASE)  { $env:VIBEBARA_CLOUD_WS_BASE = $DEFAULT_CLOUD_WS_BASE }
     Write-Host "  [后端] -NoBe: 不起本地后端，直连云端" -ForegroundColor Yellow
+    if ($env:VIBEBARA_CLOUD_API_BASE.StartsWith("http://")) {
+        Write-Host "  [安全警告] 当前云端使用明文 HTTP/WS，请勿用于正式外部发布" -ForegroundColor Yellow
+    }
     Write-Host "  [云端] API → $($env:VIBEBARA_CLOUD_API_BASE)" -ForegroundColor Cyan
     Write-Host "  [云端] WS  → $($env:VIBEBARA_CLOUD_WS_BASE)"  -ForegroundColor Cyan
 }
