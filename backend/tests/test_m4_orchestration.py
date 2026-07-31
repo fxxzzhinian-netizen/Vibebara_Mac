@@ -18,6 +18,7 @@ import base64
 import hashlib
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,6 +31,8 @@ from app.services.content_transfer import (
 )
 from app.services.project_service import _assemble_artifact, _compute_content_hash
 from app.services.skill_diff_service import diff_abstract_packages, parse_native_skill
+from app.services import object_store as object_store_module
+from app.services.object_store import LocalObjectStore
 
 
 # ------------------------------------------------------------------
@@ -95,23 +98,33 @@ def test_write_files_rejects_path_escape():
                 pass
 
 
-def test_collect_store_resources_structure():
-    with tempfile.TemporaryDirectory() as d:
-        store = Path(d) / "skill"
-        (store / "scripts").mkdir(parents=True)
-        (store / "references").mkdir()
-        (store / "assets").mkdir()
-        # 用 write_bytes 精确控制内容（避免 Windows write_text 把 \n 翻译成 \r\n）
-        (store / "scripts" / "run.py").write_bytes(b"print(1)\n")
-        (store / "references" / "doc.md").write_bytes(b"doc\n")
-        png = bytes([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE])
-        (store / "assets" / "icon.png").write_bytes(png)
-        # 这些 root 文件不应被纳入资源
-        (store / "skill.config.yaml").write_bytes(b"name: x\n")
-        (store / "SKILL.md").write_bytes(b"body\n")
-        (store / "LICENSE").write_bytes(b"MIT\n")
+@contextmanager
+def _isolated_object_store(root: Path):
+    previous = object_store_module._store
+    store = LocalObjectStore(str(root))
+    object_store_module._store = store
+    try:
+        yield store
+    finally:
+        object_store_module._store = previous
 
-        res = collect_store_resources(str(store))
+
+def test_collect_store_resources_structure():
+    with tempfile.TemporaryDirectory() as d, _isolated_object_store(
+        Path(d) / "object-store"
+    ) as store:
+        prefix = "skills/team/demo-team-12345678"
+        # 用 put_bytes 精确控制内容（避免 Windows write_text 把 \n 翻译成 \r\n）
+        store.put_bytes(prefix + "/scripts/run.py", b"print(1)\n")
+        store.put_bytes(prefix + "/references/doc.md", b"doc\n")
+        png = bytes([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE])
+        store.put_bytes(prefix + "/assets/icon.png", png)
+        # 这些 root 文件不应被纳入资源
+        store.put_bytes(prefix + "/skill.config.yaml", b"name: x\n")
+        store.put_bytes(prefix + "/SKILL.md", b"body\n")
+        store.put_bytes(prefix + "/LICENSE", b"MIT\n")
+
+        res = collect_store_resources(prefix)
         by_path = {r["path"]: r for r in res}
         assert set(by_path) == {"scripts/run.py", "references/doc.md", "assets/icon.png"}
         assert by_path["scripts/run.py"]["encoding"] == "utf8"
@@ -126,20 +139,20 @@ def test_collect_store_resources_structure():
 # 2. build-artifact 产物组装
 # ------------------------------------------------------------------
 
-def _make_store(d: Path) -> Path:
-    store = d / "demo"
-    (store / "scripts").mkdir(parents=True)
-    (store / "assets").mkdir()
-    (store / "scripts" / "run.py").write_text("print('go')\n", encoding="utf-8")
-    (store / "assets" / "icon.png").write_bytes(bytes(range(64)))
-    (store / "skill.config.yaml").write_text("name: demo\n", encoding="utf-8")
-    (store / "SKILL.md").write_text("body\n", encoding="utf-8")
-    return store
+def _make_store(store: LocalObjectStore) -> str:
+    prefix = "skills/team/demo-team-12345678"
+    store.put_text(prefix + "/scripts/run.py", "print('go')\n")
+    store.put_bytes(prefix + "/assets/icon.png", bytes(range(64)))
+    store.put_text(prefix + "/skill.config.yaml", "name: demo\n")
+    store.put_text(prefix + "/SKILL.md", "body\n")
+    return prefix
 
 
 def test_assemble_artifact_structure():
-    with tempfile.TemporaryDirectory() as d:
-        store = _make_store(Path(d))
+    with tempfile.TemporaryDirectory() as d, _isolated_object_store(
+        Path(d) / "object-store"
+    ) as object_store:
+        store_prefix = _make_store(object_store)
         build_outputs = [
             {
                 "target": "cursor",
@@ -148,7 +161,7 @@ def test_assemble_artifact_structure():
                 },
             }
         ]
-        out = _assemble_artifact("demo", "cursor", 7, str(store), build_outputs)
+        out = _assemble_artifact("demo", "cursor", 7, store_prefix, build_outputs)
         assert out["success"] is True
         assert out["skill_id"] == "demo"
         assert out["tool"] == "cursor"
@@ -158,7 +171,7 @@ def test_assemble_artifact_structure():
         rpaths = {r["path"] for r in out["resources"]}
         assert rpaths == {"scripts/run.py", "assets/icon.png"}
         # repo_hash == Store 收敛 hash
-        assert out["repo_hash"] == _compute_content_hash(str(store))
+        assert out["repo_hash"] == object_store.compute_prefix_hash(store_prefix)
         # abstract_snapshot 由产物直接生成（云端，无需本地回传）
         snap = out["abstract_snapshot"]
         assert snap.get("config", {}).get("name") == "demo"
@@ -168,13 +181,15 @@ def test_assemble_artifact_structure():
 
 
 def test_assemble_artifact_picks_matching_tool():
-    with tempfile.TemporaryDirectory() as d:
-        store = _make_store(Path(d))
+    with tempfile.TemporaryDirectory() as d, _isolated_object_store(
+        Path(d) / "object-store"
+    ) as object_store:
+        store_prefix = _make_store(object_store)
         build_outputs = [
             {"target": "cursor", "contents": {"SKILL.md": "---\nname: demo\n---\nC\n"}},
             {"target": "codex", "contents": {"SKILL.md": "---\nname: demo\n---\nX\n", "agents/openai.yaml": "interface: {}\n"}},
         ]
-        out = _assemble_artifact("demo", "codex", 1, str(store), build_outputs)
+        out = _assemble_artifact("demo", "codex", 1, store_prefix, build_outputs)
         assert "agents/openai.yaml" in out["contents"]
 
 

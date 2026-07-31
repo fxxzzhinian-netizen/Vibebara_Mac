@@ -196,8 +196,14 @@ async def _service_idempotency_and_ownership() -> None:
 
 
     # 两个临时用户
-    u1 = (await auth_service.register(f"dev-test-{uuid.uuid4().hex[:8]}", "pw"))
-    u2 = (await auth_service.register(f"dev-test-{uuid.uuid4().hex[:8]}", "pw"))
+    # 本测试验证设备服务，不验证邀请码；显式使用受信任的测试注册入口。
+    u1 = await auth_service.register(
+        f"dev-test-{uuid.uuid4().hex[:8]}", "pw", bypass_invite=True
+    )
+    u2 = await auth_service.register(
+        f"dev-test-{uuid.uuid4().hex[:8]}", "pw", bypass_invite=True
+    )
+    assert u1.get("success") and u2.get("success"), (u1, u2)
     uid1, uid2 = u1["user_id"], u2["user_id"]
     client_uuid = f"cuid-{uuid.uuid4().hex}"
 

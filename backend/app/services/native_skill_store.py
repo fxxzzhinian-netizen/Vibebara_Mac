@@ -26,6 +26,7 @@ from app.core.config import settings
 from app.core.database import async_session_factory
 from app.models.project import UserSkillDeployment
 from app.models.skill_package import PersonalSkill, TeamSkill
+from app.models.team import TeamMember
 from app.models.user import User
 from app.services.skill_forge_service import call_bridge
 from app.services.skill_sync_service import SkillSyncService
@@ -461,6 +462,25 @@ class NativeSkillStore:
             return row, "team"
         return None, None
 
+    @staticmethod
+    async def _row_accessible(session, row, user_id: Optional[str]) -> bool:
+        """统一仓库访问判断；user_id=None 仅保留给受信任的内部任务。"""
+        if row is None:
+            return user_id is None
+        if user_id is None:
+            return True
+        if isinstance(row, PersonalSkill):
+            return not row.owner_id or row.owner_id == user_id
+        if isinstance(row, TeamSkill):
+            member_id = await session.scalar(
+                select(TeamMember.id).where(
+                    TeamMember.team_id == row.team_id,
+                    TeamMember.user_id == user_id,
+                )
+            )
+            return member_id is not None
+        return False
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -714,6 +734,11 @@ class NativeSkillStore:
     async def get_by_id(
         cls, skill_id: str, user_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
+        async with async_session_factory() as session:
+            row, _ = await cls._get_row(session, skill_id)
+            if not await cls._row_accessible(session, row, user_id):
+                return None
+
         prefix, scope = cls._resolve_prefix(skill_id)
         if prefix is None:
             return None
@@ -726,18 +751,6 @@ class NativeSkillStore:
                 cls._write_store_config(prefix, config)
 
         vibeh_content = cls._read_store_vibeh(prefix)
-
-        async with async_session_factory() as session:
-            row, _ = await cls._get_row(session, skill_id)
-
-        # 个人 Skill 归属校验：非属主不可见。
-        if (
-            isinstance(row, PersonalSkill)
-            and user_id
-            and row.owner_id
-            and row.owner_id != user_id
-        ):
-            return None
 
         return {
             "id": skill_id,
@@ -774,17 +787,14 @@ class NativeSkillStore:
         """读取单个资源文件内容。文本返回 utf8，无法解码则返回 base64（标记为二进制）。"""
         import base64
 
+        async with async_session_factory() as session:
+            row, _ = await cls._get_row(session, skill_id)
+            if not await cls._row_accessible(session, row, user_id):
+                raise PermissionError("Skill 不存在或无权访问")
+
         prefix, _scope = cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
-
-        async with async_session_factory() as session:
-            row, _ = await cls._get_row(session, skill_id)
-        if (
-            isinstance(row, PersonalSkill) and user_id
-            and row.owner_id and row.owner_id != user_id
-        ):
-            raise PermissionError("无权访问他人的个人 Skill")
 
         safe = cls._safe_resource_rel(rel_path)
         data = cls._store().get_bytes(prefix + "/" + safe)
@@ -817,20 +827,16 @@ class NativeSkillStore:
         """写入单个资源文件内容，并刷新资源清单与内容哈希。"""
         import base64
 
+        async with async_session_factory() as session:
+            row, row_scope = await cls._get_row(session, skill_id)
+            if row_scope == "team" and (not user_id or user_id == "system"):
+                raise PermissionError("团队 Skill 编辑需要登录用户身份")
+            if not await cls._row_accessible(session, row, user_id):
+                raise PermissionError("Skill 不存在或无权修改")
+
         prefix, scope = cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
-
-        is_team = scope == "team"
-        async with async_session_factory() as session:
-            row, _ = await cls._get_row(session, skill_id)
-            if is_team and (not user_id or user_id == "system"):
-                raise PermissionError("团队 Skill 编辑需要登录用户身份")
-            if (
-                isinstance(row, PersonalSkill) and user_id
-                and row.owner_id and row.owner_id != user_id
-            ):
-                raise PermissionError("无权修改他人的个人 Skill")
 
         safe = cls._safe_resource_rel(rel_path)
         key = prefix + "/" + safe

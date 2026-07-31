@@ -82,7 +82,7 @@ def test_local_mode_keeps_full_watcher():
     assert rec.start_calls[0]["watch_deployments"] is True
 
 
-# --- M2 评审决议②：cloud 下线 launcher HTTP 路由 ---
+# --- cloud 下线后端机器文件系统与 launcher HTTP 路由 ---
 
 
 def _route_paths(mode: str):
@@ -102,7 +102,15 @@ def _has_prefix(paths, prefix: str) -> bool:
 
 def test_cloud_mode_unmounts_launcher():
     paths = _route_paths("cloud")
-    # 决议②：cloud 下线 launcher 的 HTTP 路由（桌面壳本机经 IPC 启动）
+    # cloud 不得暴露任何可浏览、扫描或迁移服务器文件的路由。
+    for path in (
+        "/api/v1/skill-forge/browse",
+        "/api/v1/skill-forge/packages",
+        "/api/v1/skill-forge/rescan",
+        "/api/v1/skill-forge/migrate",
+    ):
+        assert path not in paths, paths
+    # launcher 同样只属于本地桌面形态。
     assert not _has_prefix(paths, "/api/v1/launcher"), paths
     # 已退役的 session/adapter 编排子系统：两种模式均不应再存在
     assert not _has_prefix(paths, "/api/v1/adapters"), paths
@@ -115,7 +123,14 @@ def test_cloud_mode_unmounts_launcher():
 
 def test_local_mode_mounts_launcher():
     paths = _route_paths("local")
-    # local 维持现状：launcher 照常挂载
+    # local 维持现状：本地文件系统和 launcher 路由照常挂载。
+    for path in (
+        "/api/v1/skill-forge/browse",
+        "/api/v1/skill-forge/packages",
+        "/api/v1/skill-forge/rescan",
+        "/api/v1/skill-forge/migrate",
+    ):
+        assert path in paths, paths
     assert _has_prefix(paths, "/api/v1/launcher"), paths
     # 已退役的编排子系统在 local 模式同样不存在
     assert not _has_prefix(paths, "/api/v1/adapters"), paths

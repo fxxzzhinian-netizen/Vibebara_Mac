@@ -59,7 +59,7 @@ const showPreview = ref(false)
 const previewLoading = ref(false)
 const showDeployModal = ref(false)
 
-const activeTab = ref<'basic' | 'intro' | 'instructions' | 'resources' | 'metadata' | 'platform'>('basic')
+const activeTab = ref<'basic' | 'intro' | 'instructions' | 'resources' | 'metadata' | 'platform'>('intro')
 
 // 左侧标签栏黑色滑块：随选中标签纵向平滑滑动到对应位置。
 const tabSideRef = ref<HTMLElement | null>(null)
@@ -77,7 +77,7 @@ const {
   end: paneTransitionEnd,
 } = useDirectionalTransition({
   value: () => activeTab.value,
-  order: ['basic', 'intro', 'instructions', 'resources', 'metadata', 'platform'],
+  order: ['intro', 'basic', 'instructions', 'resources', 'metadata', 'platform'],
   names: { forward: 'pane-down', backward: 'pane-up' },
 })
 
@@ -419,8 +419,8 @@ onMounted(() => {
         <div class="editor-body">
           <aside ref="tabSideRef" class="tab-side">
             <span class="tab-slider" :class="{ ready: tabSliderReady }" :style="tabSliderStyle"></span>
-            <button class="tab-side-item" :class="{ active: activeTab === 'basic' }" @click="activeTab = 'basic'">基本信息</button>
             <button class="tab-side-item" :class="{ active: activeTab === 'intro' }" @click="activeTab = 'intro'">介绍</button>
+            <button class="tab-side-item" :class="{ active: activeTab === 'basic' }" @click="activeTab = 'basic'">基本信息</button>
             <button class="tab-side-item" :class="{ active: activeTab === 'instructions' }" @click="activeTab = 'instructions'">SKILL 指令</button>
             <button class="tab-side-item" :class="{ active: activeTab === 'resources' }" @click="activeTab = 'resources'">资源</button>
             <button class="tab-side-item" :class="{ active: activeTab === 'metadata' }" @click="activeTab = 'metadata'">元数据</button>

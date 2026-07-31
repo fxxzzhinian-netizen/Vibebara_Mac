@@ -125,7 +125,7 @@ async function aiGenerate() {
 
 <style scoped>
 /* —— 编辑态 —— */
-.intro-edit { max-width: 860px; }
+.intro-edit { max-width: 100%; }
 .intro-toolbar {
   display: flex;
   justify-content: flex-end;

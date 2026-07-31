@@ -139,7 +139,6 @@ def create_app() -> FastAPI:
     is_cloud = settings.DEPLOYMENT_MODE == "cloud"
 
     # 始终挂载的 REST 路由（local/cloud 共用）
-    app.include_router(skill_forge_router, prefix="/api/v1")
     app.include_router(skill_store_router, prefix="/api/v1")
     app.include_router(market_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")
@@ -150,9 +149,10 @@ def create_app() -> FastAPI:
     # 设备身份端点（M5-b 地基）：local/cloud 均挂载（云端数据端点，无本地盘依赖）。
     app.include_router(devices_router, prefix="/api/v1")
 
-    # 本地能力路由：cloud 模式下线 launcher 的 HTTP 路由（M2 评审决议②）；
-    # 桌面壳（唯一发布形态）在本机经 IPC 直接启动工具，不依赖本路由。
+    # 本地能力路由：这些端点会直接浏览、扫描、迁移后端机器文件。
+    # cloud 模式必须完全不挂载，由桌面端经 localhost local-agent 执行。
     if not is_cloud:
+        app.include_router(skill_forge_router, prefix="/api/v1")
         app.include_router(launcher_router, prefix="/api/v1")
 
     # WebSocket 路由（项目级 /ws/project/{project_id} + 团队级 /ws/team/{team_id}）

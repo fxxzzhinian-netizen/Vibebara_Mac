@@ -103,12 +103,37 @@ class ObjectStore:
 
 class LocalObjectStore(ObjectStore):
     def __init__(self, root: str) -> None:
-        self._root = Path(root)
+        self._root = Path(root).resolve()
         self._root.mkdir(parents=True, exist_ok=True)
 
-    def _path(self, key: str) -> Path:
-        rel = (key or "").replace("\\", "/").lstrip("/")
-        return self._root / rel
+    def _safe_key(self, key: str, *, allow_root: bool = False) -> str:
+        """把逻辑对象键约束在存储根内，并阻断绝对路径、父级与符号链接逃逸。"""
+        raw = (key or "").replace("\\", "/")
+        if "\x00" in raw:
+            raise ValueError("对象键包含非法空字节")
+        if raw.startswith("/") or (
+            len(raw) >= 2 and raw[0].isalpha() and raw[1] == ":"
+        ):
+            raise ValueError(f"对象键必须是相对路径: {key!r}")
+        rel = raw.strip("/")
+        if not rel:
+            if allow_root:
+                return ""
+            raise ValueError("对象键不能为空")
+        parts = rel.split("/")
+        if any(part in ("", ".", "..") for part in parts):
+            raise ValueError(f"非法对象键: {key!r}")
+
+        candidate = (self._root / Path(*parts)).resolve()
+        try:
+            candidate.relative_to(self._root)
+        except (ValueError, OSError):
+            raise ValueError(f"对象键越出存储根目录: {key!r}") from None
+        return "/".join(parts)
+
+    def _path(self, key: str, *, allow_root: bool = False) -> Path:
+        rel = self._safe_key(key, allow_root=allow_root)
+        return self._root if not rel else self._root.joinpath(*rel.split("/"))
 
     def put_bytes(self, key: str, data: bytes) -> None:
         p = self._path(key)
@@ -125,13 +150,13 @@ class LocalObjectStore(ObjectStore):
         return self._path(key).is_file()
 
     def list(self, prefix: str) -> List[str]:
-        norm = (prefix or "").replace("\\", "/").lstrip("/")
+        norm = self._safe_key(prefix, allow_root=True)
         # 以目录形式列举：取 norm 去尾斜杠对应的目录，递归列出文件，再用原始前缀过滤。
         dir_part = norm.rstrip("/")
-        base_dir = self._root / dir_part if dir_part else self._root
+        base_dir = self._path(dir_part, allow_root=True)
         if not base_dir.exists():
             # 也可能 norm 本身就是某文件键
-            if self._path(norm).is_file():
+            if self._path(norm, allow_root=True).is_file():
                 return [norm]
             return []
         out: List[str] = []
@@ -147,7 +172,7 @@ class LocalObjectStore(ObjectStore):
 
     def list_dirs(self, prefix: str) -> List[str]:
         base = _norm_prefix(prefix)
-        base_dir = self._root / base.rstrip("/") if base else self._root
+        base_dir = self._path(base, allow_root=True)
         if not base_dir.is_dir():
             return []
         return sorted(
@@ -156,8 +181,7 @@ class LocalObjectStore(ObjectStore):
         )
 
     def delete_prefix(self, prefix: str) -> None:
-        norm = (prefix or "").replace("\\", "/").strip("/")
-        target = self._root / norm if norm else self._root
+        target = self._path(prefix, allow_root=True)
         if target.is_dir():
             shutil.rmtree(target, ignore_errors=True)
         elif target.is_file():
@@ -169,6 +193,8 @@ class LocalObjectStore(ObjectStore):
     def copy_prefix(self, src_prefix: str, dst_prefix: str) -> None:
         src_base = _norm_prefix(src_prefix)
         dst_base = _norm_prefix(dst_prefix)
+        self._safe_key(src_base, allow_root=True)
+        self._safe_key(dst_base, allow_root=True)
         for key in self.list(src_base):
             rel = key[len(src_base):]
             data = self.get_bytes(key)

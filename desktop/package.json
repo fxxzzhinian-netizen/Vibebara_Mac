@@ -1,6 +1,6 @@
 {
   "name": "@vibebara/desktop",
-  "version": "1.1.16",
+  "version": "1.2.1",
   "private": true,
   "description": "Vibebara 桌面客户端外壳（Electron / 方案 B M5-a）。主进程负责：拉起并守护本地代理 local-agent、生成并注入配对令牌、注入 window.__VIBEBARA_RUNTIME__ 运行时配置、用 safeStorage 安全存储登录 token、重做一键启动 launcher。渲染层复用 frontend/dist 构建产物。",
   "author": "DAIL",
@@ -25,8 +25,8 @@
   ],
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "electron": "^33.0.0",
-    "electron-builder": "^26.0.0",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.7.0"
   }
 }
