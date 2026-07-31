@@ -27,6 +27,7 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
 
 # 把本地代理与前端构建产物打进安装包（packaged 时主进程从 process.resourcesPath 解析）。
 extraResources:

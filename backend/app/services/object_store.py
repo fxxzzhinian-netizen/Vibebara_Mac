@@ -181,7 +181,8 @@ class LocalObjectStore(ObjectStore):
         )
 
     def delete_prefix(self, prefix: str) -> None:
-        target = self._path(prefix, allow_root=True)
+        # 删除根前缀会清空整个对象仓库；任何调用方都必须提供明确的非空命名空间。
+        target = self._path(prefix)
         if target.is_dir():
             shutil.rmtree(target, ignore_errors=True)
         elif target.is_file():
@@ -288,6 +289,8 @@ class CosObjectStore(ObjectStore):
         return sorted(names)
 
     def delete_prefix(self, prefix: str) -> None:
+        if not _norm_prefix(prefix):
+            raise ValueError("拒绝删除空对象前缀")
         keys = self.list(prefix)
         if not keys:
             return
