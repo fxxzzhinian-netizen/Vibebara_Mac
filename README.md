@@ -78,14 +78,14 @@ curl http://localhost:8000/health       # {"status":"healthy",...}
 ### 2. 本机：启动桌面壳（PowerShell，连云端后端）
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "https://你的域名/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "wss://你的域名"
 .\build-desktop.ps1 -Quick -NoBe
 ```
 
 > - `-NoBe`：不在本机起后端，直连云端。
 > - 首次或代码刚更新用上面这条（重建前端 + 桌面壳 + 本地代理三件套）；代码没改想秒开加 `-Quick`：`.\build-desktop.ps1 -Quick -NoBe`。
-> - 把 `服务器公网IP` 换成实际 IP。更多启动方式见下方「桌面客户端开发与联调」。
+> - 远程连接强制使用 HTTPS/WSS；请先用域名和 TLS 反向代理把公网 443 转发到后端 8000，后端端口不要直接暴露公网。
 
 ---
 
@@ -97,7 +97,7 @@ $env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
 
 - 一台 Linux 云服务器（Ubuntu 推荐），有公网 IP
 - Docker 20+ 及 Docker Compose 插件
-- 安全组放行 `8000/tcp`
+- 安全组仅放行 `443/tcp`；由 TLS 反向代理转发到容器后端 `8000`
 
 > 国内云服务器安装 Docker 建议使用阿里云/腾讯云镜像源，详见下方「国内环境注意事项」。
 
@@ -114,24 +114,26 @@ printf 'DB_USER=cowork\nDB_PASSWORD=你的数据库密码\nMYSQL_ROOT_PASSWORD=�
 # Skill 持久化改用腾讯云 COS 对象存储（不再用本地磁盘卷）。COS_BUCKET/COS_REGION 已在
 # docker-compose 设默认值，仅需补密钥；详见 docs/design/cos-storage.md。
 printf 'STORAGE_BACKEND=cos\nCOS_SECRET_ID=你的SecretId\nCOS_SECRET_KEY=你的SecretKey\n' >> .env
+printf 'ALLOWED_ORIGINS=["null","https://你的Web域名"]\nADMIN_USERNAMES=["你的管理员用户名"]\n' >> .env
 
 # 3. 构建并启动
 docker compose up -d --build
 
 # 4. 验证
 docker compose ps                        # backend、mysql 均为 running/healthy
-docker compose logs --tail=30 backend    # 期望：MySQL 表就绪 / 创建用户: DAIL
+docker compose logs --tail=30 backend    # 期望：MySQL 表就绪 / 跳过预设用户
 curl http://localhost:8000/health        # {"status":"healthy",...}
 ```
 
-### 预设账号
+### 创建首个账号
 
-后端首次启动会自动创建以下账号：
+cloud 模式不会创建任何预设弱口令账号。先在服务器签发一次性邀请码：
 
-| 用户名 | 密码 |
-| --- | --- |
-| `DAIL` | `DAIL2026` |
-| `DAIL2` | `DAIL2027` |
+```bash
+docker compose exec backend python scripts/generate_invites.py -n 1
+```
+
+再从客户端使用该邀请码注册；管理员用户名须与 `.env` 的 `ADMIN_USERNAMES` 一致。
 
 ### 前端开发者模式（跳过登录直调 UI）
 
@@ -240,8 +242,8 @@ docker compose build --build-arg APT_MIRROR=mirrors.aliyun.com backend
 云端后端已在服务器部署后，开发者本机只需指定服务器地址：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://服务器公网IP:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://服务器公网IP:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "https://你的域名/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "wss://你的域名"
 .\build-desktop.ps1 -NoBe     # 不启动本地后端，直连云端
 ```
 
@@ -287,7 +289,9 @@ cd ..
 .\build-desktop.ps1 -Pack        # 构建 + 解压即用目录（不生成安装包，适合本地试运行）
 ```
 
-> 首次打包会下载 Electron 和 NSIS 工具链。代码签名证书需另行配置（见 `desktop/electron-builder.yml`）。
+> `-Dist` 是正式发布路径，会强制要求 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`
+>（或对应 `CSC_*`）代码签名凭据及 HTTPS `VIBEBARA_UPDATE_URL`；缺任一项即拒绝产出安装包。
+> `-Pack` 仅生成本地试运行目录，可不签名。
 
 ### 云端地址覆盖
 
@@ -296,18 +300,24 @@ cd ..
 - **环境变量**（联调优先级最高）：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://服务器IP:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://服务器IP:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "https://你的域名/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "wss://你的域名"
+$env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 ```
 
 - **配置文件**：`%APPDATA%/@vibebara/desktop/vibebara-desktop.config.json`
 
 ```json
 {
-  "cloudApiBase": "http://服务器IP:8000/api/v1",
-  "cloudWsBase": "ws://服务器IP:8000"
+  "cloudApiBase": "https://你的域名/api/v1",
+  "cloudWsBase": "wss://你的域名",
+  "updateUrl": "https://你的更新域名/desktop/"
 }
 ```
+
+安装包不内置明文公网地址；首次启动前必须通过环境变量或上述配置文件提供 HTTPS/WSS。
+正式构建会生成更新元数据，把 `desktop/release/` 中安装包、blockmap 和 `latest.yml`
+同步到 `VIBEBARA_UPDATE_URL` 对应的静态存储即可启用自动更新。
 
 ---
 
@@ -346,5 +356,5 @@ chmod +x start.sh && ./start.sh
 - **Docker 构建慢 / 拉镜像超时**：国内云服务器需配置镜像加速（见「国内环境注意事项」）。
 - **Skill 部署 / 构建失败，提示未找到 node**：skill-forge bridge 依赖 Node.js；确认 `node` 在 PATH 中。Docker 镜像已内置 Node 20。
 - **项目动态不实时**：确认后端已运行、页面顶部显示「实时同步中」；前端已内置 WebSocket 自动重连与轮询兜底。WS 为进程内内存态，后端**必须单进程**（`--workers 1`）。
-- **桌面壳启动白屏 / 接口 401**：确认 cloud 模式后端已启动，且设置了 `ALLOW_ORIGIN_REGEX=.*`（Electron `file://` Origin 为 `null`，需放行）。Docker 部署已默认配置。
+- **桌面壳启动白屏 / 接口 401**：确认 cloud 模式后端已启动，且 `ALLOWED_ORIGINS` 显式包含 `"null"`（Electron `file://` Origin）及实际 Web 域名；不要使用 `ALLOW_ORIGIN_REGEX=.*`。
 - **桌面壳提示本地代理不可用**：确认 `local-agent/dist/index.js` 已构建（`build-desktop.ps1` 会自动构建）。主进程会自动拉起代理进程；崩溃后自动重启并漂移端口。

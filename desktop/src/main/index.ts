@@ -1,5 +1,7 @@
-import { app, BrowserWindow, Menu, session } from "electron";
+import { app, BrowserWindow, dialog, Menu, session } from "electron";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { configureAutoUpdater } from "./autoUpdate";
 import {
   getEffectiveDeviceId,
   getOrCreateClientUuid,
@@ -30,6 +32,7 @@ const LOCAL_AGENT_PREFERRED_PORT = 51873; // 与 local-agent dev 默认对齐，
 let agent: LocalAgentManager | null = null;
 let runtimeConfig: RuntimeConfigPayload | null = null;
 let mainWindow: BrowserWindow | null = null;
+let updateUrl = "";
 
 function resolvePaths(): { agentEntry: string; frontendIndex: string } {
   const isPackaged = app.isPackaged;
@@ -42,6 +45,43 @@ function resolvePaths(): { agentEntry: string; frontendIndex: string } {
     agentEntry: path.join(root, "local-agent", "dist", "index.js"),
     frontendIndex: path.join(root, "frontend", "dist", "index.html"),
   };
+}
+
+function devServerUrl(): string | null {
+  const raw = process.env.VIBEBARA_DEV_SERVER_URL;
+  if (!raw) return null;
+  if (app.isPackaged) {
+    throw new Error("安装包禁止加载 VIBEBARA_DEV_SERVER_URL");
+  }
+  const url = new URL(raw);
+  const loopbackHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
+  if (!["http:", "https:"].includes(url.protocol) || !loopbackHosts.has(url.hostname)) {
+    throw new Error("VIBEBARA_DEV_SERVER_URL 仅允许 localhost/127.0.0.1/[::1]");
+  }
+  return url.href;
+}
+
+function normalizedPath(value: string): string {
+  const normalized = path.normalize(path.resolve(value));
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+/** IPC 与导航只信任打包内的 index.html，开发态只信任显式本机 Vite origin。 */
+function isTrustedRendererUrl(rawUrl: string): boolean {
+  try {
+    const candidate = new URL(rawUrl);
+    const devUrl = devServerUrl();
+    if (devUrl) {
+      return candidate.origin === new URL(devUrl).origin;
+    }
+    if (candidate.protocol !== "file:") return false;
+    return (
+      normalizedPath(fileURLToPath(candidate)) ===
+      normalizedPath(resolvePaths().frontendIndex)
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** 本地代理端口漂移（崩溃重启分到新端口）→ 热更 runtimeConfig + 推送渲染层（M5 任务②）。 */
@@ -63,6 +103,7 @@ function onLocalAgentPortChange(port: number): void {
 async function bootstrap(): Promise<void> {
   const { agentEntry } = resolvePaths();
   const cloud = loadCloudConfig();
+  updateUrl = cloud.updateUrl;
   const clientUuid = getOrCreateClientUuid();
   const deviceId = getEffectiveDeviceId(); // registeredDeviceId ?? clientUuid
   const pairingToken = generatePairingToken();
@@ -72,6 +113,7 @@ async function bootstrap(): Promise<void> {
   runtimeConfig = buildRuntimeConfig({ port, pairingToken, cloud, deviceId, clientUuid });
   registerIpc({
     getRuntimeConfig: () => runtimeConfig,
+    isTrustedSender: isTrustedRendererUrl,
     // M5-b：登录注册后回写规范 device_id + 热更运行时（后续 sendSync 即取新值）。
     persistDeviceId: (id: string): string => {
       persistRegisteredDeviceId(id);
@@ -136,6 +178,13 @@ async function configureProxy(): Promise<void> {
   }
 }
 
+function configureSessionSecurity(): void {
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, _permission, callback) => callback(false),
+  );
+}
+
 function createWindow(): void {
   const { frontendIndex } = resolvePaths();
   // 移除 Electron 默认应用菜单（File/Edit/View/Window/Help）：本应用 UI 完全由前端承载，
@@ -161,11 +210,24 @@ function createWindow(): void {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
   });
 
-  const devUrl = process.env.VIBEBARA_DEV_SERVER_URL;
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isTrustedRendererUrl(url)) {
+      event.preventDefault();
+      console.warn(`[security] 已拦截非受信任导航: ${url}`);
+    }
+  });
+  mainWindow.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+
+  const devUrl = devServerUrl();
   if (devUrl) {
     void mainWindow.loadURL(devUrl);
   } else {
@@ -184,15 +246,25 @@ function shutdownAgent(): void {
   }
 }
 
-void app.whenReady().then(async () => {
-  await bootstrap();
-  await configureProxy();
-  createWindow();
+void app
+  .whenReady()
+  .then(async () => {
+    await bootstrap();
+    await configureProxy();
+    configureSessionSecurity();
+    createWindow();
+    configureAutoUpdater(updateUrl);
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  })
+  .catch((error: unknown) => {
+    const message = (error as Error)?.message || String(error);
+    console.error("[main] 启动失败:", message);
+    dialog.showErrorBox("Vibebara 启动失败", message);
+    app.quit();
   });
-});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

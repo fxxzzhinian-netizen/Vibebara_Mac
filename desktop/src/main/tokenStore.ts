@@ -31,11 +31,11 @@ export function getToken(): string {
     if (!fs.existsSync(f)) return "";
     const buf = fs.readFileSync(f);
     if (buf.length === 0) return "";
-    if (encryptionAvailable()) {
-      return safeStorage.decryptString(buf);
+    if (!encryptionAvailable()) {
+      console.error("[token-store] safeStorage 加密不可用，拒绝读取持久化凭据");
+      return "";
     }
-    // 加密不可用（极少见）：回退明文读取（已在写入侧告警）。
-    return buf.toString("utf-8");
+    return safeStorage.decryptString(buf);
   } catch {
     return "";
   }
@@ -48,16 +48,13 @@ export function setToken(token: string): void {
       if (fs.existsSync(f)) fs.unlinkSync(f);
       return;
     }
-    if (encryptionAvailable()) {
-      fs.writeFileSync(f, safeStorage.encryptString(token));
-    } else {
-      console.warn(
-        "[token-store] safeStorage 加密不可用，回退明文存储（不安全，请检查 OS keychain）",
-      );
-      fs.writeFileSync(f, Buffer.from(token, "utf-8"));
+    if (!encryptionAvailable()) {
+      throw new Error("safeStorage 加密不可用，已拒绝明文保存登录凭据");
     }
+    fs.writeFileSync(f, safeStorage.encryptString(token), { mode: 0o600 });
   } catch (e) {
     console.error("[token-store] 写入失败:", (e as Error)?.message);
+    throw e;
   }
 }
 

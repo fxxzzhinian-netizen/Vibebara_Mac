@@ -183,16 +183,16 @@ async def _seed_default_users():
     """创建预设用户（幂等，已存在则跳过）。
 
     受 SEED_USERS_ENABLED 开关控制：生产可关闭以避免「已知用户名+已知弱密码」长期存在；
-    cloud 模式下仍启用时打印显著安全告警。
+    cloud 模式禁止启用，避免任何生产环境重新创建已公开的弱口令账号。
     """
     if not settings.SEED_USERS_ENABLED:
         print("  [启动] SEED_USERS_ENABLED=false，跳过预设用户创建")
         return
 
     if settings.DEPLOYMENT_MODE == "cloud":
-        print(
-            "  [启动][security] 警告：cloud 模式启用了预设账号（DAIL/DAIL2，密码已文档化）。"
-            "生产建议设 SEED_USERS_ENABLED=false 并改用邀请码注册的强密码账号。"
+        raise RuntimeError(
+            "cloud 模式禁止 SEED_USERS_ENABLED=true：预设账号密码已公开，"
+            "请使用邀请码注册并显式配置管理员"
         )
 
     from app.services import auth_service

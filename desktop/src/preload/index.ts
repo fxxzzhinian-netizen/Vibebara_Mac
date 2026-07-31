@@ -80,12 +80,17 @@ contextBridge.exposeInMainWorld("__VIBEBARA_DESKTOP__", {
     /** 写 token：更新缓存 + 异步加密落盘。 */
     set: (t: string): void => {
       tokenCache = t || "";
-      void ipcRenderer.invoke(CH.TOKEN_SET, tokenCache);
+      void ipcRenderer.invoke(CH.TOKEN_SET, tokenCache).catch((error: unknown) => {
+        tokenCache = "";
+        console.error("[desktop-bridge] 登录凭据安全存储失败:", error);
+      });
     },
     /** 清除 token：更新缓存 + 异步删除落盘。 */
     clear: (): void => {
       tokenCache = "";
-      void ipcRenderer.invoke(CH.TOKEN_CLEAR);
+      void ipcRenderer.invoke(CH.TOKEN_CLEAR).catch((error: unknown) => {
+        console.error("[desktop-bridge] 清除登录凭据失败:", error);
+      });
     },
   },
   cli: {

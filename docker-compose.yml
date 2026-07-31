@@ -46,15 +46,19 @@ services:
       DB_AUTO_CREATE: "true"
       # 必填：高熵签名密钥。未设置则启动失败（防止误用开发默认密钥）。
       JWT_SECRET: ${JWT_SECRET:?请在同目录 .env 设置 JWT_SECRET}
-      # 联调期放开 CORS（含 Electron null Origin）。正式环境收紧为具体来源。
-      ALLOW_ORIGIN_REGEX: ".*"
+      # Electron file:// 请求的 Origin 为 null；Web 域名需在 .env 以 JSON 数组显式加入。
+      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["null"]}'
+      ALLOW_ORIGIN_REGEX: '${ALLOW_ORIGIN_REGEX:-}'
+      # cloud 模式禁止创建已公开弱口令的 DAIL/DAIL2 预设账号。
+      SEED_USERS_ENABLED: "false"
       # 注册邀请码：测试版收口注册入口（默认开启）。
       # 签发：docker compose exec backend python scripts/generate_invites.py -n 10
       INVITE_CODE_REQUIRED: ${INVITE_CODE_REQUIRED:-true}
       # 滑块人机验证：登录/注册必须先通过滑块拼图（默认开启）。
       CAPTCHA_REQUIRED: ${CAPTCHA_REQUIRED:-true}
       # 邀请码管理端点的管理员用户名白名单（JSON 数组）
-      ADMIN_USERNAMES: '${ADMIN_USERNAMES:-["DAIL"]}'
+      ADMIN_USERNAMES: '${ADMIN_USERNAMES:-[]}'
+      MARKET_SEED_REVIEWERS: '${MARKET_SEED_REVIEWERS:-[]}'
       # 对象存储后端：Skill 持久化改用腾讯云 COS（不再用本地磁盘卷）。
       # 详见 docs/design/cos-storage.md。密钥务必经 .env 注入，勿入 git。
       # 凭证非 compose 级强制：STORAGE_BACKEND=cos 时由后端 CosObjectStore 启动校验
@@ -73,7 +77,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-qwen-plus}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       mysql:
         condition: service_healthy

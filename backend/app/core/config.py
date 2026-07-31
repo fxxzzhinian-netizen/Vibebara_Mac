@@ -77,20 +77,17 @@ class Settings(BaseSettings):
     # True = 注册必须提供有效邀请码（种子用户不受影响）；本地开发可设 false 放开。
     INVITE_CODE_REQUIRED: bool = True
     # 邀请码管理端点（签发/列表/禁用）的管理员用户名白名单。
-    # 环境变量注入用 JSON 形式：ADMIN_USERNAMES=["DAIL"]
-    ADMIN_USERNAMES: List[str] = ["DAIL"]
+    # 默认无人具备用户名白名单权限；生产按需经 JSON 环境变量显式注入。
+    ADMIN_USERNAMES: List[str] = []
 
-    # SKILL 市场种子审核员（始终具备审核 + 创建平台管理员权限，自己发布免审核）。
-    # 与预设种子用户保持一致（DAIL/DAIL2）。环境变量注入：MARKET_SEED_REVIEWERS=["DAIL","DAIL2"]
-    MARKET_SEED_REVIEWERS: List[str] = ["DAIL", "DAIL2"]
+    # SKILL 市场审核员用户名白名单；生产按需显式配置。
+    MARKET_SEED_REVIEWERS: List[str] = []
 
     # ------------------------------------------------------------------
     # 预设种子用户（启动时幂等创建 DAIL/DAIL2）
     # ------------------------------------------------------------------
-    # True = 启动时创建文档化的预设账号（默认，兼容现状/README）；
-    # 生产可设 false 关闭，避免「已知用户名+已知弱密码」长期存在。
-    # cloud 模式下仍启用时会打印显著安全告警。
-    SEED_USERS_ENABLED: bool = True
+    # True = 仅本地开发时创建文档化预设账号；cloud 模式禁止启用。
+    SEED_USERS_ENABLED: bool = False
 
     # ------------------------------------------------------------------
     # 数据目录 / Skill 存储（去 user-home 语义耦合）

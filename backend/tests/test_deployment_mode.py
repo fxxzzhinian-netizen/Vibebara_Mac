@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app.main as m
 
+_original_seed_default_users = m._seed_default_users
+
 
 class _Recorder:
     def __init__(self):
@@ -141,6 +143,22 @@ def test_local_mode_mounts_launcher():
     assert _has_prefix(paths, "/ws/"), paths
 
 
+def test_cloud_mode_rejects_default_seed_users():
+    previous_mode = m.settings.DEPLOYMENT_MODE
+    previous_enabled = m.settings.SEED_USERS_ENABLED
+    try:
+        m.settings.DEPLOYMENT_MODE = "cloud"
+        m.settings.SEED_USERS_ENABLED = True
+        try:
+            asyncio.run(_original_seed_default_users())
+            raise AssertionError("cloud 模式不应允许创建公开弱口令预设账号")
+        except RuntimeError as exc:
+            assert "禁止 SEED_USERS_ENABLED=true" in str(exc)
+    finally:
+        m.settings.DEPLOYMENT_MODE = previous_mode
+        m.settings.SEED_USERS_ENABLED = previous_enabled
+
+
 def _run_all():
     test_cloud_mode_disables_deployment_poll()
     print("  PASS  test_cloud_mode_disables_deployment_poll")
@@ -150,7 +168,9 @@ def _run_all():
     print("  PASS  test_cloud_mode_unmounts_launcher")
     test_local_mode_mounts_launcher()
     print("  PASS  test_local_mode_mounts_launcher")
-    print("\nAll 4 deployment-mode tests passed.")
+    test_cloud_mode_rejects_default_seed_users()
+    print("  PASS  test_cloud_mode_rejects_default_seed_users")
+    print("\nAll 5 deployment-mode tests passed.")
 
 
 if __name__ == "__main__":

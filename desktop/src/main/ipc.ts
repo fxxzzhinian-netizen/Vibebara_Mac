@@ -1,4 +1,8 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import {
+  ipcMain,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+} from "electron";
 import {
   IPC,
   type CliAuthorizationRequest,
@@ -17,29 +21,44 @@ import * as tokenStore from "./tokenStore";
  */
 export function registerIpc(deps: {
   getRuntimeConfig: () => RuntimeConfigPayload | null;
+  /** 仅允许打包内页面或本机开发服务器调用高权限 IPC。 */
+  isTrustedSender: (url: string) => boolean;
   /** 回写云端铸造的规范 device_id（M5-b 注册后）；返回回写后的有效 deviceId。 */
   persistDeviceId: (deviceId: string) => string;
 }): void {
+  const senderUrl = (event: IpcMainEvent | IpcMainInvokeEvent): string =>
+    event.senderFrame?.url || event.sender.getURL();
+  const isTrusted = (event: IpcMainEvent | IpcMainInvokeEvent): boolean =>
+    deps.isTrustedSender(senderUrl(event));
+  const assertTrusted = (event: IpcMainInvokeEvent): void => {
+    if (!isTrusted(event)) {
+      throw new Error("拒绝来自非受信任页面的 IPC 调用");
+    }
+  };
+
   // —— 运行时配置（同步）——
   ipcMain.on(IPC.RUNTIME_GET_SYNC, (event) => {
-    event.returnValue = deps.getRuntimeConfig();
+    event.returnValue = isTrusted(event) ? deps.getRuntimeConfig() : null;
   });
 
   // —— 设备身份回写（M5-b，异步）：登录注册后把规范 device_id 落 vibebara-device.json ——
-  ipcMain.handle(IPC.DEVICE_PERSIST_ID, (_e: IpcMainInvokeEvent, deviceId: unknown) => {
+  ipcMain.handle(IPC.DEVICE_PERSIST_ID, (event: IpcMainInvokeEvent, deviceId: unknown) => {
+    assertTrusted(event);
     const id = typeof deviceId === "string" ? deviceId : "";
     return deps.persistDeviceId(id);
   });
 
   // —— 登录 token（同步读 / 异步写）——
   ipcMain.on(IPC.TOKEN_GET_SYNC, (event) => {
-    event.returnValue = tokenStore.getToken();
+    event.returnValue = isTrusted(event) ? tokenStore.getToken() : "";
   });
-  ipcMain.handle(IPC.TOKEN_SET, (_e: IpcMainInvokeEvent, token: unknown) => {
+  ipcMain.handle(IPC.TOKEN_SET, (event: IpcMainInvokeEvent, token: unknown) => {
+    assertTrusted(event);
     tokenStore.setToken(typeof token === "string" ? token : "");
     return true;
   });
-  ipcMain.handle(IPC.TOKEN_CLEAR, () => {
+  ipcMain.handle(IPC.TOKEN_CLEAR, (event: IpcMainInvokeEvent) => {
+    assertTrusted(event);
     tokenStore.clearToken();
     return true;
   });
@@ -47,17 +66,21 @@ export function registerIpc(deps: {
   // —— C+：已登录桌面会话为 CLI 铸 PAT 后，一键写入用户级 CLI 配置 ——
   ipcMain.handle(
     IPC.CLI_AUTHORIZE,
-    (_e: IpcMainInvokeEvent, request: CliAuthorizationRequest) =>
-      writeCliAuthorization(request),
+    (event: IpcMainInvokeEvent, request: CliAuthorizationRequest) => {
+      assertTrusted(event);
+      return writeCliAuthorization(request);
+    },
   );
 
   // —— launcher 一键启动（异步）——
-  ipcMain.handle(IPC.LAUNCHER_LIST, () => {
+  ipcMain.handle(IPC.LAUNCHER_LIST, (event: IpcMainInvokeEvent) => {
+    assertTrusted(event);
     return launcher.listTools();
   });
   ipcMain.handle(
     IPC.LAUNCHER_LAUNCH,
-    (_e: IpcMainInvokeEvent, req: LauncherLaunchRequest) => {
+    (event: IpcMainInvokeEvent, req: LauncherLaunchRequest) => {
+      assertTrusted(event);
       try {
         return launcher.launchTool(req);
       } catch (e) {

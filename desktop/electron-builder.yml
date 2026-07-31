@@ -1,8 +1,6 @@
 # Vibebara 桌面壳打包配置（方案 B M5-c 脚手架，Windows-first）。
 #
-# ⚠️ M5-a 阶段仅提供此配置骨架，打包/签名/自动更新的完整落地属 M5-c。
-# 使用前需在 devDependencies 安装 electron-builder，并将 local-agent/frontend 产物
-# 作为 extraResources 一并打入（与主进程 resolvePaths() 的 packaged 分支对齐）。
+# 开发解包使用本文件；正式签名发布由 electron-builder.release.yml 继承并收紧。
 
 appId: com.vibebara.desktop
 productName: Vibebara
@@ -19,6 +17,16 @@ electronLanguages:
 
 # 安装包采用最大压缩（NSIS/LZMA）。仅影响安装包体积与打包耗时，不影响安装后体积。
 compression: maximum
+asar: true
+
+# 关闭可绕过应用边界的 Electron 启动入口，并要求只从完整 ASAR 加载应用代码。
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 
 # 把本地代理与前端构建产物打进安装包（packaged 时主进程从 process.resourcesPath 解析）。
 extraResources:
@@ -56,8 +64,6 @@ win:
   icon: build/icon.ico
   target:
     - nsis
-  # 代码签名（M5-c）：证书到位后配置 certificateFile / certificatePassword 或
-  # 走 Azure Trusted Signing / EV 证书。证书申请为长周期项，需提前并行启动（见 M5 实施计划 §5）。
 
 # 覆盖升级机制：appId 固定（com.vibebara.desktop）→ 安装器用其派生的 GUID 在注册表里
 # 识别"这台机器上已装的 Vibebara"。只要本次打包的版本号高于已装版本，运行安装包时会
@@ -69,7 +75,4 @@ nsis:
   allowToChangeInstallationDirectory: false # 锁定安装目录，避免装到不同目录产生重复副本
   deleteAppDataOnUninstall: false           # 升级时静默卸旧版并保留用户数据
 
-# 自动更新（M5-c）：electron-updater + 发布通道（generic / github）。
-# publish:
-#   provider: generic
-#   url: https://updates.vibebara.example/desktop/
+# 正式发布配置、强制签名和 generic 更新元数据见 electron-builder.release.yml。

@@ -1,0 +1,12 @@
+extends: ./electron-builder.yml
+
+# 正式发布绝不允许静默产出未签名安装包。证书仅从 CI/发布机环境变量读取：
+# WIN_CSC_LINK（或 CSC_LINK）+ WIN_CSC_KEY_PASSWORD（或 CSC_KEY_PASSWORD）。
+win:
+  forceCodeSigning: true
+
+# 生成 latest.yml / blockmap，供 electron-updater 从 HTTPS generic 源检查更新。
+# generic provider 不负责上传；将 release 目录产物同步到该地址对应的静态存储。
+publish:
+  provider: generic
+  url: ${env.VIBEBARA_UPDATE_URL}
