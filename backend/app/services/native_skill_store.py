@@ -470,7 +470,7 @@ class NativeSkillStore:
         if user_id is None:
             return True
         if isinstance(row, PersonalSkill):
-            return not row.owner_id or row.owner_id == user_id
+            return bool(row.owner_id) and row.owner_id == user_id
         if isinstance(row, TeamSkill):
             member_id = await session.scalar(
                 select(TeamMember.id).where(

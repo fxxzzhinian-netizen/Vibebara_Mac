@@ -107,6 +107,26 @@ def test_team_skill_reads_require_membership(tmp_path, monkeypatch):
     asyncio.run(scenario())
 
 
+def test_ownerless_personal_skill_is_not_public():
+    row = PersonalSkill(
+        id="ownerless",
+        owner_id=None,
+        display_name="",
+        description="",
+        short_description="",
+        version="1.0.0",
+        tags=[],
+        store_path="skills/personal/ownerless",
+        content_hash="",
+    )
+    session = _FakeSession(_team_row("unused-team-skill"), None)
+
+    assert (
+        asyncio.run(NativeSkillStore._row_accessible(session, row, "any-user"))
+        is False
+    )
+
+
 @pytest.mark.parametrize(
     "bad_key",
     (
@@ -134,3 +154,14 @@ def test_local_object_store_rejects_escaping_keys(tmp_path, bad_key):
 
     assert not outside.exists()
     assert root.exists()
+
+
+def test_local_object_store_refuses_to_delete_root(tmp_path):
+    root = tmp_path / "store"
+    object_store = LocalObjectStore(str(root))
+    object_store.put_text("skills/personal/demo/SKILL.md", "keep")
+
+    with pytest.raises(ValueError, match="不能为空"):
+        object_store.delete_prefix("")
+
+    assert object_store.get_text("skills/personal/demo/SKILL.md") == "keep"
