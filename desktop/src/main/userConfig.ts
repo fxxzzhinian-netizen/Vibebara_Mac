@@ -33,11 +33,11 @@ const DEV_DEFAULTS: CloudConfig = {
   writableRoots: [],
 };
 
-// 安装包不再内置明文 HTTP 地址。发布时必须经环境变量或用户配置提供 HTTPS/WSS，
-// 未配置会在启动阶段明确失败，避免 token 静默发送到不安全链路。
+// 当前线上尚未部署 TLS，安装包暂时沿用 HTTP/WS 公网地址。
+// 迁移到 HTTPS/WSS 后应替换这里，并关闭 validateEndpoint 的远程明文兼容开关。
 const PACKAGED_DEFAULTS: CloudConfig = {
-  cloudApiBase: "",
-  cloudWsBase: "",
+  cloudApiBase: "http://43.136.128.162:8000/api/v1",
+  cloudWsBase: "ws://43.136.128.162:8000",
   updateUrl: "",
   writableRoots: [],
 };
@@ -63,18 +63,22 @@ function validateEndpoint(
   label: string,
   secureProtocol: "https:" | "wss:",
   localProtocol: "http:" | "ws:",
+  allowRemoteInsecure = false,
 ): string {
   if (!raw) {
     throw new Error(`${label} 未配置`);
   }
   const url = new URL(raw);
   const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  if (
-    url.protocol !== secureProtocol &&
-    !(url.protocol === localProtocol && isLoopback && !app.isPackaged)
-  ) {
+  if (url.protocol === localProtocol && (isLoopback || allowRemoteInsecure)) {
+    if (!isLoopback) {
+      console.warn(`[security] ${label} 正在使用远程明文地址: ${url.origin}`);
+    }
+    return url.href.replace(/\/$/, "");
+  }
+  if (url.protocol !== secureProtocol) {
     throw new Error(
-      `${label} 必须使用 ${secureProtocol}//；仅未打包开发态允许本机 ${localProtocol}//`,
+      `${label} 仅支持 ${secureProtocol}// 或明确兼容的 ${localProtocol}//`,
     );
   }
   return url.href.replace(/\/$/, "");
@@ -126,12 +130,14 @@ export function loadCloudConfig(): CloudConfig {
     "cloudApiBase",
     "https:",
     "http:",
+    true,
   );
   merged.cloudWsBase = validateEndpoint(
     merged.cloudWsBase,
     "cloudWsBase",
     "wss:",
     "ws:",
+    true,
   );
   if (merged.updateUrl) {
     merged.updateUrl = validateEndpoint(
