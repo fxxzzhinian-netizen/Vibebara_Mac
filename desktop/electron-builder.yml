@@ -21,7 +21,9 @@ asar: true
 
 # 关闭可绕过应用边界的 Electron 启动入口，并要求只从完整 ASAR 加载应用代码。
 electronFuses:
-  runAsNode: false
+  # local-agent 通过 ELECTRON_RUN_AS_NODE=1 复用 Electron 内置 Node；
+  # 关闭此 fuse 会把代理子进程重新启动成完整桌面应用，形成递归进程风暴。
+  runAsNode: true
   enableCookieEncryption: true
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false
@@ -56,6 +58,13 @@ extraResources:
   - from: ../frontend/dist
     to: frontend/dist
     filter: ["**/*"]
+  # Windows 独立 CLI（Node SEA）：用户机无需预装 Node.js。
+  - from: ../cli/release
+    to: cli
+    filter:
+      - vibebara.exe
+  - from: scripts/update-cli-path.ps1
+    to: cli/update-cli-path.ps1
 
 files:
   - dist-electron/**/*
@@ -75,5 +84,6 @@ nsis:
   perMachine: false                         # 装到当前用户（%LOCALAPPDATA%\Programs\Vibebara），免管理员
   allowToChangeInstallationDirectory: false # 锁定安装目录，避免装到不同目录产生重复副本
   deleteAppDataOnUninstall: false           # 升级时静默卸旧版并保留用户数据
+  include: build/installer.nsh              # 安装/卸载时幂等维护用户 PATH 中的 resources\cli
 
 # 正式发布配置、强制签名和 generic 更新元数据见 electron-builder.release.yml。

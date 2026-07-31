@@ -60,7 +60,7 @@ export function useSkillSync(
     }
   }
 
-  function connect(pid: string) {
+  function connect(pid: string, userId: string) {
     manualClose = false
     closeSocket()
     if (reconnectTimer) {
@@ -69,7 +69,10 @@ export function useSkillSync(
     }
 
     const token = getToken()
-    const userId = localStorage.getItem('vibebara_user_id') || 'anonymous'
+    if (!token) {
+      connected.value = false
+      return
+    }
     // WS 云端化（M0 §9）：用 runtimeConfig 的云端 WS 基址；未配置时回退当前 host（dev/同源兼容）。
     const url =
       cloudWsUrl(`/ws/project/${pid}`) +
@@ -94,8 +97,12 @@ export function useSkillSync(
     ws.onclose = () => {
       connected.value = false
       // 非主动关闭（断线/服务端重启）时定时重连，保证动态实时性
-      if (!manualClose && projectId() === pid) {
-        reconnectTimer = setTimeout(() => connect(pid), 3000)
+      if (
+        !manualClose &&
+        projectId() === pid &&
+        authStore.user?.id === userId
+      ) {
+        reconnectTimer = setTimeout(() => connect(pid, userId), 3000)
       }
     }
 
@@ -122,8 +129,7 @@ export function useSkillSync(
       // 提示统一走全局提示窗（AppToast），且每个事件只弹一次：
       //   - 自己触发的事件不再弹（成功已由本地操作的全局提示给出一次），避免与服务端广播叠加；
       //   - 他人的改动（如别人推送）弹一次全局提示窗。
-      const selfId =
-        authStore.user?.id || localStorage.getItem('vibebara_user_id') || ''
+      const selfId = authStore.user?.id || ''
       const isSelf = !!evt.user_id && evt.user_id === selfId
       if (!isSelf) {
         toast.info(formatNotification(msg), undefined, '团队动态')
@@ -172,10 +178,10 @@ export function useSkillSync(
   }
 
   const stopWatch = watch(
-    projectId,
-    (newId) => {
-      if (newId) {
-        connect(newId)
+    [projectId, () => authStore.user?.id ?? null],
+    ([newId, userId]) => {
+      if (newId && userId) {
+        connect(newId, userId)
       } else {
         disconnect()
       }

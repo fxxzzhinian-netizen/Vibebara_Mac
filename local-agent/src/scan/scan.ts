@@ -23,7 +23,32 @@ function existsSync(p: string): boolean {
   }
 }
 
-/** 列出 dir 下不以 `.` 开头的子目录绝对路径（对齐 package.ts::listSubDirs）。 */
+const SKIP_SCAN_DIRS = new Set([
+  "node_modules",
+  "__pycache__",
+  ".git",
+  ".svn",
+  ".hg",
+  "dist",
+  "build",
+  "$RECYCLE.BIN",
+  "System Volume Information",
+]);
+
+/** IDE 点号配置目录到其 Skill 容器的相对路径。 */
+const IDE_SKILL_CONTAINERS = new Map<string, string[]>([
+  [".cursor", ["skills"]],
+  [".codex", ["skills"]],
+  [".codeium", ["windsurf", "skills"]],
+  [".claude", ["skills"]],
+  [".kiro", ["skills"]],
+  [".trae", ["skills"]],
+  [".trae-cn", ["skills"]],
+  [".qoder", ["skills"]],
+  [".workbuddy", ["skills"]],
+]);
+
+/** 列出可扫描的直接子目录；普通点号目录仍跳过，但保留受支持 IDE 的配置目录。 */
 function listSubDirs(dir: string): string[] {
   const result: string[] = [];
   let entries: fs.Dirent[];
@@ -33,9 +58,12 @@ function listSubDirs(dir: string): string[] {
     return result;
   }
   for (const entry of entries) {
-    if (entry.isDirectory() && !entry.name.startsWith(".")) {
-      result.push(path.join(dir, entry.name));
-    }
+    if (!entry.isDirectory() || SKIP_SCAN_DIRS.has(entry.name)) continue;
+    if (
+      entry.name.startsWith(".") &&
+      !IDE_SKILL_CONTAINERS.has(entry.name.toLowerCase())
+    ) continue;
+    result.push(path.join(dir, entry.name));
   }
   return result;
 }
@@ -151,21 +179,34 @@ export function packageSkill(skillDir: string): UnifiedSkillPackage {
 }
 
 /**
- * 扫描 rootDir 含 SKILL.md 的「自身或一级子目录」，逐个识别并归一化输出。
+ * 扫描 rootDir 自身、一级子目录及标准 IDE 点号目录中的 Skill，逐个识别并归一化输出。
  *
  * · rootDir 自身含 SKILL.md（用户直接选中了 skill 文件夹，「纯 md」技能无外层目录）→ 收 rootDir；
- * · rootDir 的一级子目录含 SKILL.md（容器目录，如 ~/.cursor/skills）→ 收各子目录。
+ * · rootDir 的一级子目录含 SKILL.md（容器目录，如 ~/.cursor/skills）→ 收各子目录；
+ * · rootDir 是项目目录或用户目录时，识别 `.cursor/skills`、`.codex/skills` 等标准容器。
  * 两者并存（极少见）时一并收录——skill 资源目录 scripts/references/assets 不含 SKILL.md，不会重复。
  */
 export function scanAndPackage(rootDir: string): UnifiedSkillPackage[] {
   const results: UnifiedSkillPackage[] = [];
-  const candidates: string[] = [];
-  if (existsSync(path.join(rootDir, "SKILL.md"))) {
-    candidates.push(rootDir);
-  }
-  for (const dir of listSubDirs(rootDir)) {
-    if (existsSync(path.join(dir, "SKILL.md"))) candidates.push(dir);
-  }
+  const candidates = new Set<string>();
+  const addCandidate = (dir: string): void => {
+    if (existsSync(path.join(dir, "SKILL.md"))) candidates.add(dir);
+  };
+  const addContainerSkills = (container: string): void => {
+    addCandidate(container);
+    for (const dir of listSubDirs(container)) addCandidate(dir);
+  };
+  const addIdeSkills = (ideDir: string): void => {
+    const relative = IDE_SKILL_CONTAINERS.get(path.basename(ideDir).toLowerCase());
+    if (relative) addContainerSkills(path.join(ideDir, ...relative));
+  };
+
+  addCandidate(rootDir);
+  const children = listSubDirs(rootDir);
+  for (const dir of children) addCandidate(dir);
+  addIdeSkills(rootDir);
+  for (const dir of children) addIdeSkills(dir);
+
   for (const dir of candidates) {
     try {
       results.push(packageSkill(dir));

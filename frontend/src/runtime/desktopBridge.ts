@@ -57,6 +57,9 @@ export interface CliAuthorizationRequest {
 export interface CliAuthorizationResult {
   success: true
   configPath: string
+  cliBundled: boolean
+  terminalRestartRequired: boolean
+  cliPath?: string
 }
 
 export interface VibebaraDesktopBridge {

@@ -31,10 +31,12 @@ afterEach(() => {
 });
 
 describe("handleBrowse", () => {
-  it("过滤非目录 / 点开头 / node_modules,.git,dist,build,__pycache__", () => {
+  it("过滤普通隐藏/噪声目录，但保留受支持 IDE 的点号目录", () => {
     for (const d of [
       "alpha",
       "beta",
+      ".cursor",
+      ".codex",
       ".hidden",
       "node_modules",
       "__pycache__",
@@ -49,7 +51,7 @@ describe("handleBrowse", () => {
     const res = handleBrowse(tmp, ctx);
     expect(res.ok).toBe(true);
     const names = res.dirs.map((d) => d.name).sort();
-    expect(names).toEqual(["alpha", "beta"]);
+    expect(names).toEqual([".codex", ".cursor", "alpha", "beta"]);
     expect(res.dirs.every((d) => d.isDrive === false)).toBe(true);
     expect(res.current).toBe(tmp);
     expect(res.parent).toBe(path.dirname(tmp));

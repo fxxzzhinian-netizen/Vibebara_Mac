@@ -1,0 +1,157 @@
+stages:
+  - test
+  - package
+  - deploy
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: "$CI_COMMIT_BRANCH"
+
+default:
+  interruptible: true
+
+backend:
+  stage: test
+  image: python:3.12
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+    DEPLOYMENT_MODE: cloud
+    SEED_USERS_ENABLED: "false"
+    DB_ECHO: "false"
+  cache:
+    key: "pip-$CI_COMMIT_REF_SLUG"
+    paths:
+      - .cache/pip
+  before_script:
+    - cd backend
+    - python -m pip install --upgrade pip
+    - python -m pip install -r requirements.txt pytest
+  script:
+    - python -m pytest -q
+
+node:
+  stage: test
+  image: node:22
+  parallel:
+    matrix:
+      - PACKAGE_DIR:
+          - frontend
+          - backend/skill-forge
+          - desktop
+  before_script:
+    - cd "$PACKAGE_DIR"
+    - npm ci
+  script:
+    - npm run lint --if-present
+    - npm run test --if-present
+    - npm run build
+
+node-local-stack:
+  stage: test
+  image: node:22
+  script:
+    - cd local-core
+    - npm ci
+    - npm run lint
+    - npm test
+    - npm run build
+    - cd ../local-agent
+    - npm ci
+    - npm run lint
+    - npm test
+    - npm run build
+    - cd ../cli
+    - npm ci
+    - npm run lint
+    - npm test
+    - npm run build
+    - npm run bundle:win
+    - npm run verify:distribution
+    - CLI_TGZ="$(npm pack --silent)"
+    - TMP_DIR="$(mktemp -d)"
+    - npm install --prefix "$TMP_DIR" "./$CLI_TGZ"
+    - '"$TMP_DIR/node_modules/.bin/vibebara" --version'
+    - '"$TMP_DIR/node_modules/.bin/vibebara" --help'
+    - rm -rf "$TMP_DIR" "$CLI_TGZ"
+
+deploy-script:
+  stage: test
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache bash
+  script:
+    - bash -n ops/deploy-backend.sh
+
+package-backend:
+  stage: package
+  image: alpine:3.20
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+  script:
+    - printf '%s\n' "$CI_COMMIT_SHA" > RELEASE_SHA
+    - tar --exclude='backend/.env' --exclude='backend/.env.*' -czf "backend-${CI_COMMIT_SHA}.tgz" backend docker-compose.yml RELEASE_SHA
+  artifacts:
+    name: "backend-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - "backend-${CI_COMMIT_SHA}.tgz"
+    expire_in: 14 days
+
+deploy-backend-production:
+  stage: deploy
+  image: alpine:3.20
+  interruptible: false
+  resource_group: production-backend
+  timeout: 30m
+  needs:
+    - job: package-backend
+      artifacts: true
+  variables:
+    DEPLOY_PORT: "22"
+    DEPLOY_PATH: "/opt/vibebara/cowork-deploy"
+    DEPLOY_HEALTHCHECK_URL: "http://127.0.0.1:8000/health"
+  environment:
+    name: production
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+    - when: never
+  before_script:
+    - apk add --no-cache openssh-client
+    - test -n "${DEPLOY_HOST:-}" || (echo "缺少 DEPLOY_HOST" >&2; exit 1)
+    - test -n "${DEPLOY_USER:-}" || (echo "缺少 DEPLOY_USER" >&2; exit 1)
+    - test -n "${DEPLOY_SSH_PRIVATE_KEY:-}" || (echo "缺少 DEPLOY_SSH_PRIVATE_KEY" >&2; exit 1)
+    - test -n "${DEPLOY_KNOWN_HOSTS:-}" || (echo "缺少 DEPLOY_KNOWN_HOSTS" >&2; exit 1)
+    - echo "$DEPLOY_HOST" | grep -Eq '^[A-Za-z0-9._-]+$'
+    - echo "$DEPLOY_USER" | grep -Eq '^[A-Za-z_][A-Za-z0-9_-]*$'
+    - echo "$DEPLOY_PORT" | grep -Eq '^[0-9]+$'
+    - echo "$DEPLOY_PATH" | grep -Eq '^/[A-Za-z0-9._/-]+$'
+    - |
+      echo "$DEPLOY_HEALTHCHECK_URL" | grep -Eq "^https?://[^[:space:]']+$"
+    - install -m 700 -d "$HOME/.ssh"
+    - |
+      if [ -f "$DEPLOY_SSH_PRIVATE_KEY" ]; then
+        cp "$DEPLOY_SSH_PRIVATE_KEY" "$HOME/.ssh/id_deploy"
+      else
+        printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_deploy"
+      fi
+    - chmod 600 "$HOME/.ssh/id_deploy"
+    - |
+      if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then
+        cp "$DEPLOY_KNOWN_HOSTS" "$HOME/.ssh/known_hosts"
+      else
+        printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+      fi
+    - chmod 600 "$HOME/.ssh/known_hosts"
+  script:
+    - ARCHIVE_NAME="backend-${CI_COMMIT_SHA}.tgz"
+    - REMOTE_INCOMING="${DEPLOY_PATH}/.deploy/incoming"
+    - SSH_TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+    - ssh -i "$HOME/.ssh/id_deploy" -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_TARGET" "mkdir -p '${REMOTE_INCOMING}'"
+    - scp -i "$HOME/.ssh/id_deploy" -P "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$ARCHIVE_NAME" "$SSH_TARGET:${REMOTE_INCOMING}/${ARCHIVE_NAME}"
+    - scp -i "$HOME/.ssh/id_deploy" -P "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "ops/deploy-backend.sh" "$SSH_TARGET:${REMOTE_INCOMING}/deploy-backend.sh"
+    - ssh -i "$HOME/.ssh/id_deploy" -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_TARGET" "bash '${REMOTE_INCOMING}/deploy-backend.sh' '${DEPLOY_PATH}' '${REMOTE_INCOMING}/${ARCHIVE_NAME}' '${CI_COMMIT_SHA}' '${DEPLOY_HEALTHCHECK_URL}'"

@@ -10,6 +10,9 @@ export interface CliAuthorizationConfig {
 export interface CliAuthorizationResult {
   success: true;
   configPath: string;
+  cliBundled: boolean;
+  terminalRestartRequired: boolean;
+  cliPath?: string;
 }
 
 function configDirectory(): string {
@@ -18,6 +21,12 @@ function configDirectory(): string {
 
 export function cliConfigPath(): string {
   return path.join(configDirectory(), "config.json");
+}
+
+function bundledCliPath(): string | undefined {
+  if (process.platform !== "win32" || !process.resourcesPath) return undefined;
+  const candidate = path.join(process.resourcesPath, "cli", "vibebara.exe");
+  return fs.existsSync(candidate) ? candidate : undefined;
 }
 
 function validateCloudBase(value: string): string {
@@ -54,5 +63,12 @@ export function writeCliAuthorization(
   } catch {
     // Windows enforces access through the user's profile ACL.
   }
-  return { success: true, configPath: target };
+  const cliPath = bundledCliPath();
+  return {
+    success: true,
+    configPath: target,
+    cliBundled: Boolean(cliPath),
+    terminalRestartRequired: Boolean(cliPath),
+    cliPath,
+  };
 }
