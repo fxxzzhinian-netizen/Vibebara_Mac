@@ -171,14 +171,19 @@ deploy-backend-production:
       else
         printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_deploy"
       fi
-    - chmod 600 "$HOME/.ssh/id_deploy"
+      # Windows 粘贴进 GitLab 常带 CRLF，Alpine OpenSSH 会报 error in libcrypto
+      sed -i 's/\r$//' "$HOME/.ssh/id_deploy"
+      printf '\n' >> "$HOME/.ssh/id_deploy"
+      chmod 600 "$HOME/.ssh/id_deploy"
+      ssh-keygen -y -f "$HOME/.ssh/id_deploy" >/dev/null
     - |
       if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then
         cp "$DEPLOY_KNOWN_HOSTS" "$HOME/.ssh/known_hosts"
       else
         printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
       fi
-    - chmod 600 "$HOME/.ssh/known_hosts"
+      sed -i 's/\r$//' "$HOME/.ssh/known_hosts"
+      chmod 600 "$HOME/.ssh/known_hosts"
   script:
     - ARCHIVE_NAME="backend-${CI_COMMIT_SHA}.tgz"
     - REMOTE_INCOMING="${DEPLOY_PATH}/.deploy/incoming"
