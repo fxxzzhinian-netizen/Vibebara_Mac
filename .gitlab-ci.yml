@@ -12,13 +12,15 @@ workflow:
 
 default:
   interruptible: true
-  # 国内网络：依赖默认走镜像源，避免直连 PyPI / npmjs
-  variables:
-    PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple"
-    PIP_TRUSTED_HOST: "pypi.tuna.tsinghua.edu.cn"
-    PIP_DISABLE_PIP_VERSION_CHECK: "1"
-    PIP_DEFAULT_TIMEOUT: "100"
-    NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
+
+# 国内网络：依赖默认走镜像源，避免直连 PyPI / npmjs
+# （部分 GitLab 版本不支持 default:variables，故放顶层）
+variables:
+  PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple"
+  PIP_TRUSTED_HOST: "pypi.tuna.tsinghua.edu.cn"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_DEFAULT_TIMEOUT: "100"
+  NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
 
 backend:
   stage: test
