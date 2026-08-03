@@ -56,9 +56,9 @@ def _build_tree(base: Path) -> None:
     # 中文目录与文件名
     (base / "资料").mkdir(exist_ok=True)
     (base / "资料" / "说明.md").write_text("中文内容\n", encoding="utf-8")
-    # 大小写敏感
+    # 大小写排序边界；避免仅大小写不同的文件名在 Windows 上发生覆盖
     (base / "Aa.txt").write_text("Aa", encoding="utf-8")
-    (base / "aA.txt").write_text("aA", encoding="utf-8")
+    (base / "aB.txt").write_text("aB", encoding="utf-8")
     # 二进制资源
     (base / "assets").mkdir(exist_ok=True)
     (base / "assets" / "icon.png").write_bytes(bytes(range(256)) * 4)
