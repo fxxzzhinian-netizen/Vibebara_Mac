@@ -12,6 +12,13 @@ workflow:
 
 default:
   interruptible: true
+  # 国内网络：依赖默认走镜像源，避免直连 PyPI / npmjs
+  variables:
+    PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple"
+    PIP_TRUSTED_HOST: "pypi.tuna.tsinghua.edu.cn"
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    PIP_DEFAULT_TIMEOUT: "100"
+    NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
 
 backend:
   stage: test
@@ -22,12 +29,14 @@ backend:
     SEED_USERS_ENABLED: "false"
     DB_ECHO: "false"
   cache:
-    key: "pip-$CI_COMMIT_REF_SLUG"
+    key:
+      files:
+        - backend/requirements.txt
+      prefix: pip
     paths:
       - .cache/pip
   before_script:
     - cd backend
-    - python -m pip install --upgrade pip
     - python -m pip install -r requirements.txt pytest
   script:
     - python -m pytest -q
@@ -41,6 +50,12 @@ node:
           - frontend
           - backend/skill-forge
           - desktop
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+  cache:
+    key: "npm-$CI_COMMIT_REF_SLUG-$PACKAGE_DIR"
+    paths:
+      - .cache/npm
   before_script:
     - cd "$PACKAGE_DIR"
     - npm ci
@@ -52,6 +67,17 @@ node:
 node-local-stack:
   stage: test
   image: node:22
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+  cache:
+    key:
+      files:
+        - local-core/package-lock.json
+        - local-agent/package-lock.json
+        - cli/package-lock.json
+      prefix: npm-local
+    paths:
+      - .cache/npm
   script:
     - cd local-core
     - npm ci
@@ -81,6 +107,10 @@ deploy-script:
   stage: test
   image: alpine:3.20
   before_script:
+    - |
+      if [ -f /etc/apk/repositories ]; then
+        sed -i 's#https\?://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories
+      fi
     - apk add --no-cache bash
   script:
     - bash -n ops/deploy-backend.sh
@@ -121,6 +151,10 @@ deploy-backend-production:
       when: manual
     - when: never
   before_script:
+    - |
+      if [ -f /etc/apk/repositories ]; then
+        sed -i 's#https\?://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories
+      fi
     - apk add --no-cache openssh-client
     - test -n "${DEPLOY_HOST:-}" || (echo "缺少 DEPLOY_HOST" >&2; exit 1)
     - test -n "${DEPLOY_USER:-}" || (echo "缺少 DEPLOY_USER" >&2; exit 1)
