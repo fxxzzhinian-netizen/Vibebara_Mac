@@ -17,11 +17,14 @@ import type { WatchServerMessage } from "./types";
 const HOST = "127.0.0.1"; // M0 §5.4：仅监听本机回环，杜绝局域网访问
 
 /** 仅放行桌面渲染层/本地来源的 CORS，拒绝任意网页跨站调用（M0 §5.4）。 */
-function isAllowedOrigin(origin: string | undefined): boolean {
+export function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin || origin === "null") return true; // 非浏览器(curl)/file:// 等
   try {
     const u = new URL(origin);
     if (u.protocol === "file:" || u.protocol === "app:") return true;
+    // 打包桌面端通过自定义协议 vibebara://app 加载渲染层。
+    // 同时限制 host，避免其他自定义协议页面获得本地代理跨域访问权。
+    if (u.protocol === "vibebara:" && u.hostname === "app") return true;
     if (
       (u.protocol === "http:" || u.protocol === "https:") &&
       (u.hostname === "127.0.0.1" || u.hostname === "localhost")

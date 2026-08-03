@@ -8,6 +8,7 @@ import AppTopNav from '@/components/AppTopNav.vue'
 import AddSkillModal from '@/components/AddSkillModal.vue'
 import type { NativeSkillItem } from '@/api/skillStore'
 import { getSkeletonCount, setSkeletonCount } from '@/utils/skeletonCount'
+import { formatRelativeTime } from '@/utils/relativeTime'
 import { toast } from '@/composables/useToast'
 import cursorIcon from '@/img/icon/cursor.svg'
 import codexIcon from '@/img/icon/codex.svg'
@@ -98,16 +99,6 @@ function skillDesc(s: NativeSkillItem): string {
   return s.short_description || s.description || '暂无描述'
 }
 
-function formatTime(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const diff = Date.now() - d.getTime()
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`
-  return d.toLocaleDateString('zh-CN')
-}
-
 // 空间切换（含切换具体团队）→ 重新拉取列表
 watch(
   () => [workspace.spaceType, workspace.activeTeamId],
@@ -186,7 +177,7 @@ onMounted(() => {
                 :class="['platform-icon', { deployed: deployedOn(skill)[p.key] }]"
               />
             </div>
-            <span v-if="skill.updated_at" class="card-time">{{ formatTime(skill.updated_at) }}</span>
+            <span v-if="skill.updated_at" class="card-time">{{ formatRelativeTime(skill.updated_at) }}</span>
           </div>
         </div>
       </div>

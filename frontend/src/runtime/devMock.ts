@@ -26,6 +26,7 @@ import type {
   ProjectInfo,
   ProjectListResponse,
   ProjectDetailResponse,
+  ProjectResponse,
   ProjectSkillInfo,
   UserSkillDeploymentInfo,
 } from '@/api/projects'
@@ -426,6 +427,21 @@ export function devMockMembers(teamId: string): MemberListResponse {
 
 export function devMockProjectList(teamId: string): ProjectListResponse {
   return { success: true, projects: DEV_PROJECTS[teamId] ?? [] }
+}
+
+export function devMockUpdateProject(
+  projectId: string,
+  name?: string,
+  description?: string,
+): ProjectResponse {
+  const project = findProjectAnyTeam(projectId)
+  if (!project) {
+    return { success: false, error: 'project not found (dev mock)' }
+  }
+  if (name !== undefined) project.name = name
+  if (description !== undefined) project.description = description
+  project.updated_at = new Date().toISOString()
+  return { success: true, project: { ...project } }
 }
 
 /* ---------------------------------------------------------------------------

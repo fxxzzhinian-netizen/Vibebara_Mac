@@ -3,12 +3,16 @@ from typing import Any, Dict, List, Optional
 
 
 class ProjectCreateRequest(BaseModel):
-    name: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=128)
     description: str = ""
 
 
 class ProjectUpdateRequest(BaseModel):
-    name: Optional[str] = None
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=128)
     description: Optional[str] = None
 
 

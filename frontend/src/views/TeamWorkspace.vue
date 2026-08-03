@@ -15,6 +15,7 @@ import {
 import { useSkillStore } from '@/stores/skillStore'
 import { toast } from '@/composables/useToast'
 import { getSkeletonCount, setSkeletonCount } from '@/utils/skeletonCount'
+import { formatRelativeTime } from '@/utils/relativeTime'
 import { useDirectionalTransition } from '@/composables/useDirectionalTransition'
 import AppTopNav from '@/components/AppTopNav.vue'
 import AddSkillModal from '@/components/AddSkillModal.vue'
@@ -61,16 +62,6 @@ function deployedOn(skill: NativeSkillItem): Record<string, boolean> {
 
 function skillDesc(s: NativeSkillItem): string {
   return s.short_description || s.description || '暂无描述'
-}
-
-function formatTime(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const diff = Date.now() - d.getTime()
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`
-  return d.toLocaleDateString('zh-CN')
 }
 
 // 「最近一次提交」时间：后端返回的是无时区服务器时间字符串，
@@ -538,7 +529,7 @@ watch(
                     :class="['platform-icon', { deployed: deployedOn(s)[p.key] }]"
                   />
                 </div>
-                <span v-if="s.updated_at" class="card-time">{{ formatTime(s.updated_at) }}</span>
+                <span v-if="s.updated_at" class="card-time">{{ formatRelativeTime(s.updated_at) }}</span>
               </div>
             </div>
           </div>

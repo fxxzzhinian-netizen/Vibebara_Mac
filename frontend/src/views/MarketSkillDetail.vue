@@ -18,6 +18,7 @@ import { toast } from '@/composables/useToast'
 import { confirmDialog } from '@/composables/useConfirmDialog'
 import { useSlideIndicator } from '@/composables/useSlideIndicator'
 import { useDirectionalTransition } from '@/composables/useDirectionalTransition'
+import { formatRelativeTime } from '@/utils/relativeTime'
 import AppTopNav from '@/components/AppTopNav.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import ResourceFilesPanel from '@/components/ResourceFilesPanel.vue'
@@ -305,18 +306,7 @@ function goBack() {
 }
 
 function timeAgo(ts: string | null | undefined): string {
-  if (!ts) return '—'
-  const t = new Date(ts).getTime()
-  if (Number.isNaN(t)) return '—'
-  const diff = Date.now() - t
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return '刚刚'
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day} 天前`
-  return new Date(ts).toLocaleDateString()
+  return formatRelativeTime(ts, { emptyText: '—', relativeDayLimit: 30 })
 }
 
 onMounted(load)

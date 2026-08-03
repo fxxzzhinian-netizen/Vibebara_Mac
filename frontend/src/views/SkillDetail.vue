@@ -17,6 +17,7 @@ import {
 } from '@/api/skillStore'
 import type { ChangeItem } from '@/api/projects'
 import { parseUnifiedDiff, inlineSegments } from '@/utils/diffView'
+import { formatRelativeTime } from '@/utils/relativeTime'
 import type { DiffRow, DiffRowType, InlinePair, SegOp } from '@/utils/diffView'
 import { isMockForced, mockVersions, mockVersionDetail, mockResourceFile } from '@/utils/devMockVersions'
 import { useTeamStore } from '@/stores/teamStore'
@@ -543,18 +544,7 @@ async function confirmDeleteSkill() {
 }
 
 function timeAgo(ts: string | null | undefined): string {
-  if (!ts) return '—'
-  const t = new Date(ts).getTime()
-  if (Number.isNaN(t)) return '—'
-  const diff = Date.now() - t
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return '刚刚'
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day} 天前`
-  return new Date(ts).toLocaleDateString()
+  return formatRelativeTime(ts, { emptyText: '—', relativeDayLimit: 30 })
 }
 </script>
 

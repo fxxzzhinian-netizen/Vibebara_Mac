@@ -239,12 +239,16 @@ async def get_project(project_id: str) -> Optional[Dict[str, Any]]:
 
 
 async def update_project(
-    project_id: str, name: Optional[str] = None, description: Optional[str] = None
+    project_id: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    user_id: str = "system",
 ) -> Optional[Dict[str, Any]]:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if not project:
             return None
+        team_id = project.team_id
         if name is not None:
             project.name = name
         if description is not None:
@@ -256,7 +260,10 @@ async def update_project(
                 ProjectSkill.project_id == project_id
             )
         )
-        return _project_to_dict(project, skill_count=count or 0)
+        result = _project_to_dict(project, skill_count=count or 0)
+
+    await TeamSyncService.emit_project_updated(team_id, result, user_id)
+    return result
 
 
 async def delete_project(project_id: str, user_id: str = "system") -> bool:
