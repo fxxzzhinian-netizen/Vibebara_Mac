@@ -72,12 +72,8 @@ node-local-stack:
   variables:
     npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
   cache:
-    key:
-      files:
-        - local-core/package-lock.json
-        - local-agent/package-lock.json
-        - cli/package-lock.json
-      prefix: npm-local
+    # GitLab 限制 key:files 最多 2 个，这里改用分支级缓存键
+    key: "npm-local-$CI_COMMIT_REF_SLUG"
     paths:
       - .cache/npm
   script:
