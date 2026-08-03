@@ -4,6 +4,7 @@ import {
   createProject,
   listProjects,
   getProject,
+  updateProject,
   deleteProject,
   addSkillToProject,
   removeSkillFromProject,
@@ -98,6 +99,41 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
       }
     }
     return res
+  }
+
+  async function update(projectId: string, name: string, description: string) {
+    try {
+      const res = await updateProject(projectId, { name, description })
+      if (res.success && res.project) {
+        const updated = res.project
+        projects.value = projects.value.map((project) =>
+          project.id === projectId
+            ? {
+                ...project,
+                name: updated.name,
+                description: updated.description,
+                updated_at: updated.updated_at,
+              }
+            : project,
+        )
+        if (currentProjectId.value === projectId) {
+          currentProject.value = currentProject.value
+            ? {
+                ...currentProject.value,
+                name: updated.name,
+                description: updated.description,
+                updated_at: updated.updated_at,
+              }
+            : updated
+        }
+      }
+      return res
+    } catch (e: any) {
+      return {
+        success: false,
+        error: e?.response?.data?.detail || e.message || '保存失败',
+      }
+    }
   }
 
   async function remove(projectId: string) {
@@ -402,6 +438,7 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
     fetchProjects,
     selectProject,
     create,
+    update,
     remove,
     addSkill,
     removeSkill,

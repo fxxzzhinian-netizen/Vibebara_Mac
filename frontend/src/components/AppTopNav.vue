@@ -221,7 +221,13 @@ async function authorizeCli() {
           cloudApiBase,
         })
         closeUserMenu()
-        toast.success(`CLI 已授权，配置已写入 ${result.configPath}`)
+        if (result.cliBundled) {
+          toast.success('CLI 已授权；请重新打开终端后运行 vibebara whoami')
+        } else {
+          toast.success(
+            `CLI 凭据已写入 ${result.configPath}；开发环境请先在 cli 目录运行 npm link`,
+          )
+        }
       } catch {
         // PAT 明文只返回一次；自动写盘失败时必须回显，避免刚轮换的 key 永久丢失。
         generatedCliKey.value = issued.api_key

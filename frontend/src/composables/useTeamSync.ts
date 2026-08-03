@@ -1,6 +1,7 @@
 import { ref, onUnmounted, watch } from 'vue'
 import { cloudWsUrl } from '@/runtime/config'
 import { getToken } from '@/runtime/tokenStorage'
+import { useAuthStore } from '@/stores/authStore'
 
 export interface TeamSyncEvent {
   type: string
@@ -28,6 +29,7 @@ export function useTeamSync(
   let ws: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let manualClose = false
+  const authStore = useAuthStore()
 
   function closeSocket() {
     if (ws) {
@@ -45,7 +47,7 @@ export function useTeamSync(
     }
   }
 
-  function connect(tid: string) {
+  function connect(tid: string, userId: string) {
     manualClose = false
     closeSocket()
     if (reconnectTimer) {
@@ -54,7 +56,10 @@ export function useTeamSync(
     }
 
     const token = getToken()
-    const userId = localStorage.getItem('vibebara_user_id') || 'anonymous'
+    if (!token) {
+      connected.value = false
+      return
+    }
     const url =
       cloudWsUrl(`/ws/team/${tid}`) +
       `?user_id=${encodeURIComponent(userId)}&token=${encodeURIComponent(token)}`
@@ -77,8 +82,12 @@ export function useTeamSync(
     ws.onclose = () => {
       connected.value = false
       // 非主动关闭（断线/服务端重启）且仍停留在该团队时，定时重连
-      if (!manualClose && teamId() === tid) {
-        reconnectTimer = setTimeout(() => connect(tid), 3000)
+      if (
+        !manualClose &&
+        teamId() === tid &&
+        authStore.user?.id === userId
+      ) {
+        reconnectTimer = setTimeout(() => connect(tid, userId), 3000)
       }
     }
 
@@ -98,10 +107,10 @@ export function useTeamSync(
   }
 
   const stopWatch = watch(
-    teamId,
-    (newId) => {
-      if (newId) {
-        connect(newId)
+    [teamId, () => authStore.user?.id ?? null],
+    ([newId, userId]) => {
+      if (newId && userId) {
+        connect(newId, userId)
       } else {
         disconnect()
       }

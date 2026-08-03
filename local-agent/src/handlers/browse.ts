@@ -8,7 +8,8 @@ import type { BrowseResponse, DirEntry } from "../types";
 /**
  * GET /local/browse —— 精确复刻 backend skill_forge_service.browse_directory（:77-123）。
  *
- * 过滤规则：跳过非目录 / "." 开头 / {node_modules,__pycache__,.git,dist,build}。
+ * 过滤规则：跳过非目录、固定噪声目录及普通隐藏目录；保留 IDE 的点号配置目录，
+ * 让用户能浏览并选择 `.cursor/skills`、`.codex/skills` 等 Skill 路径。
  * path 省略/为空：Windows 返回盘符列表，POSIX 返回 "/"。
  *
  * 【M5-b 任务③ 白名单收紧】browse 现为**纯只读浏览，无登记副作用**——消除「看一眼
@@ -25,6 +26,18 @@ const HIDDEN_DIRS = new Set([
   "build",
   "$RECYCLE.BIN",
   "System Volume Information",
+]);
+
+const VISIBLE_IDE_DOT_DIRS = new Set([
+  ".cursor",
+  ".codex",
+  ".codeium",
+  ".claude",
+  ".kiro",
+  ".trae",
+  ".trae-cn",
+  ".qoder",
+  ".workbuddy",
 ]);
 
 function listDrivesWindows(): DirEntry[] {
@@ -107,9 +120,8 @@ export function handleBrowse(
       }
     }
     if (!isDir) continue;
-    // 过滤规则（对齐 docstring 与 backend browse_directory）：跳过 "." 开头的隐藏目录
-    // 与固定噪声目录（node_modules/dist/build 等）。
-    if (entry.name.startsWith(".")) continue;
+    // 普通隐藏目录仍隐藏；IDE 点号目录必须可见，否则无法从 `.cursor/skills` 等位置导入。
+    if (entry.name.startsWith(".") && !VISIBLE_IDE_DOT_DIRS.has(entry.name)) continue;
     if (HIDDEN_DIRS.has(entry.name)) continue;
     const abs = path.join(p, entry.name);
     dirs.push({ name: entry.name, absPath: abs, isDrive: false });

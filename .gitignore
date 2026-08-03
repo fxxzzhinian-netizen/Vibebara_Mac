@@ -5,6 +5,9 @@ __pycache__/
 *.egg
 dist/
 build/
+!desktop/build/
+desktop/build/*
+!desktop/build/installer.nsh
 .venv/
 venv/
 .env
@@ -12,6 +15,7 @@ venv/
 # Node
 node_modules/
 dist/
+cli/release/
 
 # Vite 本地环境变量（含开发者模式开关 VITE_DEV_SKIP_AUTH 等，仅本地，不提交）
 .env.local

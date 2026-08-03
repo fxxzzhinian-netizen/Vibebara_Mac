@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isInside, safeJoinUnder, WritableRoots } from "../src/security";
+import { isAllowedOrigin } from "../src/server";
 
 /**
  * 可写根白名单 + 路径逃逸防护测试（M0 §5.3 / §5.4）。
@@ -83,5 +84,12 @@ describe("safeJoinUnder", () => {
   it("绝对路径 / 盘符路径抛错", () => {
     expect(() => safeJoinUnder(install, "/etc/passwd")).toThrow();
     expect(() => safeJoinUnder(install, "C:\\Windows\\x")).toThrow();
+  });
+});
+
+describe("isAllowedOrigin", () => {
+  it("仅放行正式桌面渲染层的 vibebara://app origin", () => {
+    expect(isAllowedOrigin("vibebara://app")).toBe(true);
+    expect(isAllowedOrigin("vibebara://evil")).toBe(false);
   });
 });

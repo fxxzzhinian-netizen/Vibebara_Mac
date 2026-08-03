@@ -7,6 +7,7 @@
 ```
 docs/
 ├── architecture.md              整体架构（现行）
+├── gitlab-cicd.md               GitLab CI/CD 与后端生产部署运维
 │
 ├── design/                      现行功能与子系统设计（How it works now）
 │   ├── skill-forge.md               抽象 Skill 包格式 & 多平台构建规则、反向导入
@@ -33,6 +34,7 @@ docs/
 | 文档 | 类别 | 摘要 |
 |------|------|------|
 | [architecture.md](architecture.md) | 架构 | 桌面壳 + 本地代理 + 云端后端三层架构；Vue 3 前端 + FastAPI + skill-forge + WebSocket |
+| [gitlab-cicd.md](gitlab-cicd.md) | 运维 | GitLab Runner、生产变量、后端发布、备份、健康检查与回滚 |
 | [design/skill-forge.md](design/skill-forge.md) | 设计 | 抽象 Skill 包（`skill.config.yaml` + `SKILL.md`）、多平台构建规则、反向导入 |
 | [design/skill-collaboration-sync.md](design/skill-collaboration-sync.md) | 实现纪要 | 个人/团队仓库隔离、放入团队、部署、手动推送（抽象层 diff）、拉取更新的完整链路（**单一事实来源**） |
 | [design/ai-assisted-merge.md](design/ai-assisted-merge.md) | 设计 | 推送冲突时对 base/mine/theirs 做 AI 三方合并（正文 + 配置 + 文本资源），预览可编辑后一键提交 |

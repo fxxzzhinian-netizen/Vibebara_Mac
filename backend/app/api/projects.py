@@ -103,7 +103,7 @@ async def update_project(
 ):
     await _check_project_access(project_id, user_id)
     project = await project_service.update_project(
-        project_id, data.name, data.description
+        project_id, data.name, data.description, user_id
     )
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")

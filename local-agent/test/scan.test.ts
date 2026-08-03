@@ -130,6 +130,28 @@ describe("scanAndPackage", () => {
     expect(pkgs.map((p) => p.id).sort()).toEqual(["child-skill", "mixed-skill"]);
   });
 
+  it("项目根目录下的 .cursor/.codex Skill 容器不会被点号规则忽略", () => {
+    const cursorSkill = mkSkill(path.join(".cursor", "skills", "cursor-dot-skill"), {
+      "SKILL.md": "---\nname: cursor-dot-skill\ndescription: Cursor dot dir\n---\nbody\n",
+    });
+    const codexSkill = mkSkill(path.join(".codex", "skills", "codex-dot-skill"), {
+      "SKILL.md": "---\nname: codex-dot-skill\ndescription: Codex dot dir\n---\nbody\n",
+      "agents/openai.yaml": "interface:\n  display_name: Codex Dot Skill\n",
+    });
+    mkSkill(".unrelated-hidden", {
+      "SKILL.md": "---\nname: unrelated-hidden\n---\nbody\n",
+    });
+
+    const pkgs = scanAndPackage(tmp);
+    expect(pkgs.map((p) => p.id).sort()).toEqual([
+      "codex-dot-skill",
+      "cursor-dot-skill",
+    ]);
+    expect(pkgs.map((p) => p.sourcePath).sort()).toEqual(
+      [codexSkill, cursorSkill].sort(),
+    );
+  });
+
   it("空目录 / 不存在目录 → 空数组", () => {
     expect(scanAndPackage(tmp)).toEqual([]);
     expect(scanAndPackage(path.join(tmp, "nope"))).toEqual([]);

@@ -16,6 +16,7 @@ Vibebara 是一个面向 Vibe Coding 工具（Cursor / Codex 等）的 **Skill �
 | 云端后端 | Python 3.10+ · FastAPI · Uvicorn · SQLAlchemy(async) · MySQL(aiomysql) · WebSocket |
 | 桌面壳 | Electron · TypeScript（主进程 + preload） |
 | 本地代理 | Node.js 20+ · TypeScript（纯 TS 薄代理，文件落盘/扫描/hash/监控） |
+| 协作 CLI | TypeScript · Commander · Node 22 SEA（桌面安装包内置，用户机无需 Node.js） |
 | 渲染层 | Vue 3 · Vite · Pinia · Vue Router · Axios（桌面壳加载 `frontend/dist` 产物） |
 | Skill 构建 | Node 端 skill-forge bridge（`backend/skill-forge`） |
 | 部署 | Docker · Docker Compose（云端后端 + MySQL） |
@@ -26,6 +27,8 @@ Vibebara 是一个面向 Vibe Coding 工具（Cursor / Codex 等）的 **Skill �
 Vibebara/
 ├── backend/              # FastAPI 云端后端（app/ 主代码，skill-forge/ Skill 构建桥，Dockerfile）
 ├── desktop/              # Electron 桌面壳（主进程 + 预加载 + 打包配置）
+├── cli/                  # vibebara 无头协作 CLI（merge/push/pull/status）
+├── local-core/           # CLI 与 local-agent 共用的文件/hash/安全内核
 ├── local-agent/          # 本地代理（纯 TS 薄代理，负责文件落盘/扫描/hash/监控）
 ├── frontend/             # Vue 3 + Vite 渲染层（桌面壳复用其 dist/ 产物）
 ├── docs/                 # 设计与方案文档
@@ -43,8 +46,8 @@ Vibebara/
 ┌─────────────────────────────┐          ┌───────────────────────┐
 │  Electron 桌面壳 (desktop/)  │          │  Docker               │
 │  ├─ 渲染层 (frontend/dist)   │  HTTP/WS │  ├─ backend (cloud)   │
-│  └─ 本地代理 (local-agent/)  │ ───────► │  │  └─ skill-forge    │
-│     127.0.0.1:PORT           │          │  └─ MySQL 8.0         │
+│  ├─ 本地代理 (local-agent/)  │ ───────► │  │  └─ skill-forge    │
+│  └─ CLI (vibebara.exe)       │          │  └─ MySQL 8.0         │
 └─────────────────────────────┘          └───────────────────────┘
 ```
 
@@ -105,7 +108,7 @@ $env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
 
 ```bash
 # 1. 拉取代码
-git clone https://github.com/fxxzzhinian-netizen/Vibebara.git vibebara
+git clone http://162.14.122.9/dailtech/vibebara/cowork-deploy.git vibebara
 cd vibebara
 
 # 2. 配置环境变量（.env 与 docker-compose.yml 同目录，不进 git）
@@ -280,18 +283,34 @@ cd ..
 .\build-desktop.ps1 -Quick -NoBe   # dist 已最新，秒开即可看到改动
 ```
 
-> `-Quick` 会跳过全部构建。改了前端却仍用 `-Quick` 启动，会看到旧界面——此时先 `npm run build` 重建 dist，或去掉 `-Quick`（让 `build-desktop.ps1` 重建前端+桌面壳+本地代理三件套）。
+> `-Quick` 会跳过已有产物的构建。改了前端却仍用 `-Quick` 启动，会看到旧界面——此时先 `npm run build` 重建 dist，或去掉 `-Quick`（让 `build-desktop.ps1` 重建 local-core、CLI、本地代理、前端与桌面壳五件套）。
 
 ### 打包为 Windows 安装包
 
 ```powershell
-.\build-desktop.ps1 -Dist        # 构建 + 生成 NSIS 安装包（输出到 desktop/release/）
-.\build-desktop.ps1 -Pack        # 构建 + 解压即用目录（不生成安装包，适合本地试运行）
+.\build-desktop.ps1 -UnsignedDist # 构建未签名 NSIS 安装包，供本地/内部测试
+.\build-desktop.ps1 -Dist         # 构建正式签名 NSIS 安装包
+.\build-desktop.ps1 -Pack         # 构建解压即用目录（不生成安装包）
 ```
+
+每次构建都会同时输出独立 CLI 到 `desktop/release/vibebara.exe`，方便本地终端验证；
+`-Dist` 完成后该文件会由安装包内已签名版本覆盖，可随正式产物分发。
 
 > `-Dist` 是正式发布路径，会强制要求 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`
 >（或对应 `CSC_*`）代码签名凭据及 HTTPS `VIBEBARA_UPDATE_URL`；缺任一项即拒绝产出安装包。
-> `-Pack` 仅生成本地试运行目录，可不签名。
+> `-UnsignedDist` 会生成带完整安装/卸载流程的未签名内测安装包；`-Pack` 仅生成本地试运行目录。
+>
+> NSIS 安装包内置无需 Node.js 的 `vibebara.exe`，并把其目录加入当前用户 PATH。
+> 安装或覆盖升级后需要**重新打开终端**，再运行 `vibebara --version` 验证。
+
+### CLI 授权与使用
+
+1. 安装并登录 Vibebara Desktop。
+2. 在用户菜单点击「为 CLI 授权」，桌面端会写入 `%USERPROFILE%\.vibebara\config.json`。
+3. 新开 PowerShell，运行 `vibebara whoami`；随后可使用 `status`、`merge`、`push`、`pull`。
+
+源码开发态不会修改系统 PATH；需要从源码调用时，在 `local-core` 与 `cli` 依次构建后，
+可运行 `node cli/dist/index.js --help`，或在 `cli` 目录执行 `npm link`。
 
 ### 云端地址覆盖
 
@@ -358,3 +377,4 @@ chmod +x start.sh && ./start.sh
 - **项目动态不实时**：确认后端已运行、页面顶部显示「实时同步中」；前端已内置 WebSocket 自动重连与轮询兜底。WS 为进程内内存态，后端**必须单进程**（`--workers 1`）。
 - **桌面壳启动白屏 / 接口 401**：确认 cloud 模式后端已启动，且 `ALLOWED_ORIGINS` 显式包含 `"null"`（Electron `file://` Origin）及实际 Web 域名；不要使用 `ALLOW_ORIGIN_REGEX=.*`。
 - **桌面壳提示本地代理不可用**：确认 `local-agent/dist/index.js` 已构建（`build-desktop.ps1` 会自动构建）。主进程会自动拉起代理进程；崩溃后自动重启并漂移端口。
+- **授权后终端仍提示找不到 `vibebara`**：授权只写入凭据；安装包会注册 CLI PATH，但已打开的终端不会自动刷新。关闭并重新打开终端后运行 `Get-Command vibebara`。源码开发态请先按上文构建并执行 `npm link`。

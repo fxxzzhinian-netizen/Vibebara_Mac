@@ -1,7 +1,30 @@
 # Vibebara CLI
 
 Headless Skill collaboration commands for merge, push, pull, and deployment
-status. Requires Node.js 20 or newer.
+status.
+
+## Installation
+
+The Windows desktop installer includes a signed `vibebara.exe`, registers its
+directory in the current user's PATH, and does not require Node.js on the user
+machine. Open a **new terminal** after installation or upgrade:
+
+```powershell
+vibebara --version
+```
+
+Repository development and the optional npm package require Node.js 22.12 or
+newer. From a checkout, build `local-core` before the CLI:
+
+```powershell
+cd local-core
+npm install
+npm run build
+cd ..\cli
+npm install
+npm run build
+npm link
+```
 
 ## Authorization
 
@@ -10,6 +33,7 @@ Preferred desktop flow:
 1. Sign in to Vibebara Desktop.
 2. Open the user menu and choose **为 CLI 授权**.
 3. The desktop app writes `~/.vibebara/config.json`.
+4. Open a new terminal and run `vibebara whoami`.
 
 Manual/web/CI flow:
 

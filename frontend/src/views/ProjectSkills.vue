@@ -40,6 +40,10 @@ const { connected } = useSkillSync(() => projectId.value, async () => {
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
 const showAddSkill = ref(false)
+const showEditProject = ref(false)
+const editProjectName = ref('')
+const editProjectDescription = ref('')
+const projectSaving = ref(false)
 const showDeployModal = ref(false)
 const deploySkillId = ref('')
 const deployTool = ref<'cursor' | 'codex' | 'windsurf' | 'claude' | 'kiro' | 'trae' | 'qoder' | 'workbuddy'>('cursor')
@@ -531,6 +535,40 @@ function statusLabel(status?: string): string {
   return labels[status || ''] || '未部署'
 }
 
+function openEditProject() {
+  const project = projectStore.currentProject
+  if (!project) return
+  editProjectName.value = project.name
+  editProjectDescription.value = project.description || ''
+  showEditProject.value = true
+}
+
+async function saveProject() {
+  const project = projectStore.currentProject
+  const name = editProjectName.value.trim()
+  if (!project || projectSaving.value) return
+  if (!name) {
+    toast.warning('项目名称不能为空')
+    return
+  }
+
+  const description = editProjectDescription.value.trim()
+  if (name === project.name && description === (project.description || '')) {
+    showEditProject.value = false
+    return
+  }
+
+  projectSaving.value = true
+  const res = await projectStore.update(project.id, name, description)
+  projectSaving.value = false
+  if (res.success) {
+    showEditProject.value = false
+    toast.success('项目信息已保存')
+  } else {
+    toast.error(res.error || '保存项目信息失败')
+  }
+}
+
 function formatTime(ts: string): string {
   if (!ts) return ''
   const d = new Date(ts)
@@ -559,6 +597,17 @@ function goBack() {
           </button>
           <h2 class="editor-title">{{ projectStore.currentProject?.name || '项目' }}</h2>
           <SyncStatusBadge :connected="connected" />
+          <button
+            v-if="projectStore.currentProject"
+            class="btn-edit-project"
+            title="编辑项目名称与描述"
+            aria-label="编辑项目名称与描述"
+            @click="openEditProject"
+          >
+            <svg viewBox="0 0 1024 1024" width="17" height="17" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M469.333333 128a42.666667 42.666667 0 0 1 0 85.333333H213.333333v597.333334h597.333334v-256l0.298666-4.992A42.666667 42.666667 0 0 1 896 554.666667v256a85.333333 85.333333 0 0 1-85.333333 85.333333H213.333333a85.333333 85.333333 0 0 1-85.333333-85.333333V213.333333a85.333333 85.333333 0 0 1 85.333333-85.333333z m414.72 12.501333a42.666667 42.666667 0 0 1 0 60.330667L491.861333 593.066667a42.666667 42.666667 0 0 1-60.330666-60.330667l392.192-392.192a42.666667 42.666667 0 0 1 60.330666 0z" fill="currentColor"></path>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -700,6 +749,48 @@ function goBack() {
         </ul>
       </div>
     </div>
+
+    <!-- 编辑项目信息弹窗 -->
+    <BaseModal
+      v-model="showEditProject"
+      title="编辑项目信息"
+      :closable="!projectSaving"
+      :close-on-overlay="!projectSaving"
+    >
+      <div class="field">
+        <label>项目名称</label>
+        <input
+          v-model="editProjectName"
+          maxlength="128"
+          placeholder="输入项目名称"
+          @keyup.enter="saveProject"
+        />
+      </div>
+      <div class="field">
+        <label>项目描述</label>
+        <textarea
+          v-model="editProjectDescription"
+          rows="4"
+          placeholder="输入项目描述（可选）"
+        ></textarea>
+      </div>
+      <template #footer>
+        <button
+          class="btn-sm btn-soft"
+          :disabled="projectSaving"
+          @click="showEditProject = false"
+        >
+          取消
+        </button>
+        <button
+          class="btn-sm btn-primary"
+          :disabled="projectSaving || !editProjectName.trim()"
+          @click="saveProject"
+        >
+          {{ projectSaving ? '保存中…' : '保存' }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- 添加 Skill 弹窗 -->
     <BaseModal v-model="showAddSkill" title="关联 Skill 到项目">
@@ -899,6 +990,26 @@ function goBack() {
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.01em;
+  color: #151717;
+}
+
+.btn-edit-project {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-edit-project:hover {
+  background: rgba(21, 23, 23, 0.06);
   color: #151717;
 }
 
@@ -1445,6 +1556,7 @@ function goBack() {
 }
 
 .field input,
+.field textarea,
 .field select {
   width: 100%;
   box-sizing: border-box;
@@ -1460,9 +1572,16 @@ function goBack() {
 }
 
 .field input:focus,
+.field textarea:focus,
 .field select:focus {
   border-color: #151717;
   background: #ffffff;
+}
+
+.field textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .check-line {

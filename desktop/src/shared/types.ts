@@ -49,6 +49,12 @@ export interface CliAuthorizationRequest {
 export interface CliAuthorizationResult {
   success: true;
   configPath: string;
+  /** 当前桌面安装包是否携带独立 vibebara.exe。 */
+  cliBundled: boolean;
+  /** PATH 更新只对新终端生效。 */
+  terminalRestartRequired: boolean;
+  /** 安装包内 CLI 的绝对路径；开发态缺省。 */
+  cliPath?: string;
 }
 
 /** IPC 通道名（main ↔ preload）。 */

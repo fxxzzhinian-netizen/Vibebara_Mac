@@ -13,9 +13,12 @@
 desktop/
 ├── package.json            # Electron 工程 + dev/build/start/smoke 脚本
 ├── tsconfig.json           # TS → dist-electron（CommonJS）
-├── electron-builder.yml    # M5-c 打包脚手架（Windows-first，本阶段未启用）
+├── electron-builder.yml    # Windows NSIS 打包（内置 local-agent/frontend/CLI）
+├── build/
+│   └── installer.nsh       # 安装/升级/卸载时维护用户级 CLI PATH
 ├── scripts/
-│   └── smoke-agent.cjs      # 无 GUI 验证本地代理拉起/令牌/重启/清理
+│   ├── smoke-agent.cjs      # 无 GUI 验证本地代理拉起/令牌/重启/清理
+│   └── update-cli-path.ps1  # 幂等添加/删除 resources/cli PATH
 └── src/
     ├── shared/types.ts      # 主进程↔预加载 共享类型 + IPC 通道常量
     ├── main/
@@ -34,8 +37,8 @@ desktop/
 
 ## 前置
 
-- Node ≥ 20。
-- 先构建本地代理：`cd ../local-agent && npm install && npm run build`。
+- Node ≥ 22.12（桌面发布机需要生成 Node SEA CLI；安装后的用户机不需要 Node）。
+- 先构建共享内核、CLI 与本地代理：`../local-core` → `../cli` → `../local-agent`。
 - 前端产物（prod 加载）：`cd ../frontend && npm install && npm run build`（生成 `frontend/dist`）。
 
 ## 开发 / 运行
@@ -67,7 +70,15 @@ npm run smoke:agent   # 验证本地代理拉起/配对令牌/崩溃重启/退�
 
 `<userData>` 在 Windows 为 `%APPDATA%/@vibebara/desktop`（以 Electron app name 为准）。
 
-## 打包（M5-c）
+## 打包与内置 CLI
 
-`electron-builder.yml` 已提供脚手架（Windows NSIS + extraResources 打入 local-agent/frontend 产物）。
-完整打包/签名/自动更新属 M5-c，需安装 `electron-builder` 并配置代码签名证书（长周期项，提前申请）。
+根目录 `build-desktop.ps1 -Pack/-UnsignedDist/-Dist` 会按顺序构建
+`local-core → CLI SEA → local-agent → frontend → desktop`。安装包将
+`cli/release/vibebara.exe` 放到 `resources/cli`，NSIS 为当前用户注册 PATH；
+升级保持该 PATH，真实卸载时删除。Windows 只会向新启动的终端传播 PATH，
+因此安装或升级后需重新打开终端。
+
+`-UnsignedDist` 使用基础配置生成未签名 NSIS 内测安装包；`-Dist` 使用
+`electron-builder.release.yml`，要求代码签名证书和 HTTPS 更新源；
+安装包、桌面主程序及内置 `vibebara.exe` 都必须签名。CLI 授权配置
+`%USERPROFILE%\.vibebara\config.json` 属于用户数据，卸载时保留。

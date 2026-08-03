@@ -69,6 +69,17 @@ class TeamSyncService:
         )
 
     @classmethod
+    async def emit_project_updated(
+        cls, team_id: str, project: Dict[str, Any], user_id: str
+    ) -> None:
+        await cls._emit(
+            team_id,
+            "project.updated",
+            user_id,
+            {"project_id": project.get("id"), "project": project},
+        )
+
+    @classmethod
     async def emit_project_deleted(
         cls, team_id: str, project_id: str, user_id: str
     ) -> None:

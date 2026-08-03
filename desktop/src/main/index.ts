@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, Menu, session } from "electron";
+import { app, BrowserWindow, dialog, Menu, protocol, session } from "electron";
+import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { configureAutoUpdater } from "./autoUpdate";
 import {
   getEffectiveDeviceId,
@@ -28,6 +28,21 @@ import { IPC, type RuntimeConfigPayload } from "../shared/types";
  */
 
 const LOCAL_AGENT_PREFERRED_PORT = 51873; // 与 local-agent dev 默认对齐，便于诊断
+const FRONTEND_SCHEME = "vibebara";
+const FRONTEND_HOST = "app";
+const FRONTEND_ENTRY_URL = `${FRONTEND_SCHEME}://${FRONTEND_HOST}/index.html`;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: FRONTEND_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 
 let agent: LocalAgentManager | null = null;
 let runtimeConfig: RuntimeConfigPayload | null = null;
@@ -66,7 +81,61 @@ function normalizedPath(value: string): string {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-/** IPC 与导航只信任打包内的 index.html，开发态只信任显式本机 Vite origin。 */
+function isPathInside(root: string, candidate: string): boolean {
+  const normalizedRoot = normalizedPath(root);
+  const normalizedCandidate = normalizedPath(candidate);
+  return (
+    normalizedCandidate === normalizedRoot ||
+    normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`)
+  );
+}
+
+const FRONTEND_MIME_TYPES: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".gif": "image/gif",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+/** 用受信任标准协议承载本地前端，避免 file:// ES Module 被 Chromium CORS 拦截。 */
+function configureFrontendProtocol(): void {
+  const frontendRoot = path.dirname(resolvePaths().frontendIndex);
+  void protocol.handle(FRONTEND_SCHEME, async (request) => {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== FRONTEND_HOST) {
+        return new Response("Not found", { status: 404 });
+      }
+      const relativePath =
+        decodeURIComponent(url.pathname).replace(/^[/\\]+/, "") || "index.html";
+      const target = path.resolve(frontendRoot, relativePath);
+      if (!isPathInside(frontendRoot, target)) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const content = await fs.readFile(target);
+      return new Response(new Uint8Array(content), {
+        headers: {
+          "Content-Type":
+            FRONTEND_MIME_TYPES[path.extname(target).toLowerCase()] ??
+            "application/octet-stream",
+        },
+      });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  });
+}
+
+/** IPC 与导航只信任内置 vibebara:// 页面，开发态只信任显式本机 Vite origin。 */
 function isTrustedRendererUrl(rawUrl: string): boolean {
   try {
     const candidate = new URL(rawUrl);
@@ -74,10 +143,10 @@ function isTrustedRendererUrl(rawUrl: string): boolean {
     if (devUrl) {
       return candidate.origin === new URL(devUrl).origin;
     }
-    if (candidate.protocol !== "file:") return false;
     return (
-      normalizedPath(fileURLToPath(candidate)) ===
-      normalizedPath(resolvePaths().frontendIndex)
+      candidate.protocol === `${FRONTEND_SCHEME}:` &&
+      candidate.hostname === FRONTEND_HOST &&
+      candidate.pathname === "/index.html"
     );
   } catch {
     return false;
@@ -186,7 +255,6 @@ function configureSessionSecurity(): void {
 }
 
 function createWindow(): void {
-  const { frontendIndex } = resolvePaths();
   // 移除 Electron 默认应用菜单（File/Edit/View/Window/Help）：本应用 UI 完全由前端承载，
   // 不需要原生菜单栏。不显式置 null，Electron 会自动挂上内置默认菜单。
   Menu.setApplicationMenu(null);
@@ -231,7 +299,7 @@ function createWindow(): void {
   if (devUrl) {
     void mainWindow.loadURL(devUrl);
   } else {
-    void mainWindow.loadFile(frontendIndex);
+    void mainWindow.loadURL(FRONTEND_ENTRY_URL);
   }
 
   mainWindow.on("closed", () => {
@@ -249,6 +317,7 @@ function shutdownAgent(): void {
 void app
   .whenReady()
   .then(async () => {
+    configureFrontendProtocol();
     await bootstrap();
     await configureProxy();
     configureSessionSecurity();

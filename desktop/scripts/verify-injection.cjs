@@ -34,6 +34,7 @@ const IPC = {
   TOKEN_CLEAR: "vibebara:token-clear",
   LAUNCHER_LIST: "vibebara:launcher-list",
   LAUNCHER_LAUNCH: "vibebara:launcher-launch",
+  CLI_AUTHORIZE: "vibebara:cli-authorize",
 };
 
 app.disableHardwareAcceleration();
@@ -73,6 +74,13 @@ async function run() {
     mode: "app",
     message: "noop",
   }));
+  ipcMain.handle(IPC.CLI_AUTHORIZE, (_e, req) => ({
+    success: true,
+    configPath: "C:\\Users\\verify\\.vibebara\\config.json",
+    cliBundled: req && String(req.apiKey || "").startsWith("vhk_"),
+    terminalRestartRequired: true,
+    cliPath: "C:\\Program Files\\Vibebara\\resources\\cli\\vibebara.exe",
+  }));
 
   agent = new LocalAgentManager({
     agentEntry: AGENT_ENTRY,
@@ -104,6 +112,10 @@ async function run() {
     const r = window.__VIBEBARA_RUNTIME__;
     const d = window.__VIBEBARA_DESKTOP__;
     const tools = d ? await d.launcher.listTools() : null;
+    const cliAuth = d ? await d.cli.authorize({
+      apiKey: 'vhk_verify_only',
+      cloudApiBase: 'https://cloud.example/api/v1',
+    }) : null;
     return {
       runtimeMode: r && r.mode,
       orchestration: r && r.orchestration,
@@ -118,8 +130,14 @@ async function run() {
       hasTokenSet: !!(d && typeof d.token.set === 'function'),
       toolCount: tools ? tools.tools.length : 0,
       toolIds: tools ? tools.tools.map(function(t){return t.id;}) : [],
+      cliBundled: cliAuth && cliAuth.cliBundled,
+      cliRestartRequired: cliAuth && cliAuth.terminalRestartRequired,
     };
   })()`);
+
+  if (!result.cliBundled || !result.cliRestartRequired) {
+    throw new Error("CLI_AUTHORIZE bridge result verification failed");
+  }
 
   console.log("VERIFY_RESULT_BEGIN");
   console.log(JSON.stringify({ agentHealthy, agentPort: agent.port, ...result }, null, 2));

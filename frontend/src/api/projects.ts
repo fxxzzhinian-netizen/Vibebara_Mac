@@ -1,7 +1,11 @@
 import apiClient from './client'
 import { isOrchestrationEnabled } from '@/runtime/config'
 import { DEV_SKIP_AUTH } from '@/runtime/devAuth'
-import { devMockProjectList, devMockProjectDetail } from '@/runtime/devMock'
+import {
+  devMockProjectList,
+  devMockProjectDetail,
+  devMockUpdateProject,
+} from '@/runtime/devMock'
 import {
   deployProjectSkillOrchestrated,
   deployProjectSkillGlobalOrchestrated,
@@ -232,6 +236,20 @@ export async function getProject(
   if (DEV_SKIP_AUTH) return devMockProjectDetail(projectId)
   const { data } = await apiClient.get<ProjectDetailResponse>(
     `/projects/${projectId}`,
+  )
+  return data
+}
+
+export async function updateProject(
+  projectId: string,
+  payload: { name?: string; description?: string },
+): Promise<ProjectResponse> {
+  if (DEV_SKIP_AUTH) {
+    return devMockUpdateProject(projectId, payload.name, payload.description)
+  }
+  const { data } = await apiClient.put<ProjectResponse>(
+    `/projects/${projectId}`,
+    payload,
   )
   return data
 }

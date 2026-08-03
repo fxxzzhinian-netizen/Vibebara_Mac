@@ -19,7 +19,7 @@ import { computeDirHash, hashPath } from "../src/hash";
 // 与 backend/tests/test_hash_convergence._build_tree 等价的确定性目录树在 Python
 // 参考算法下的实测 hash（已交叉校验 TS == PY）。
 const CLOUD_PARITY_HEX =
-  "961d98cc0f5a3524838f195f7a74df6ca23362ea4be2432cd1acdd906a95f0e9";
+  "37b702e386cff1ded780b07b2c679aabdfadf83a93e2d5fbc8dc931268cf394a";
 
 let tmp: string;
 
@@ -41,7 +41,7 @@ function buildTree(base: string): void {
   fs.mkdirSync(path.join(base, "资料"), { recursive: true });
   fs.writeFileSync(path.join(base, "资料", "说明.md"), "中文内容\n");
   fs.writeFileSync(path.join(base, "Aa.txt"), "Aa");
-  fs.writeFileSync(path.join(base, "aA.txt"), "aA");
+  fs.writeFileSync(path.join(base, "aB.txt"), "aB");
   fs.mkdirSync(path.join(base, "assets"), { recursive: true });
   const block = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
   fs.writeFileSync(

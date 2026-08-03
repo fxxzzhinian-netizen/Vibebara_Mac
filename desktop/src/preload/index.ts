@@ -47,6 +47,14 @@ interface CliAuthorizationRequest {
   cloudApiBase: string;
 }
 
+interface CliAuthorizationResult {
+  success: true;
+  configPath: string;
+  cliBundled: boolean;
+  terminalRestartRequired: boolean;
+  cliPath?: string;
+}
+
 const runtime =
   (ipcRenderer.sendSync(CH.RUNTIME_GET_SYNC) as RuntimeConfigPayload | null) ??
   null;
@@ -94,8 +102,11 @@ contextBridge.exposeInMainWorld("__VIBEBARA_DESKTOP__", {
     },
   },
   cli: {
-    authorize: (request: CliAuthorizationRequest) =>
-      ipcRenderer.invoke(CH.CLI_AUTHORIZE, request),
+    authorize: (request: CliAuthorizationRequest): Promise<CliAuthorizationResult> =>
+      ipcRenderer.invoke(
+        CH.CLI_AUTHORIZE,
+        request,
+      ) as Promise<CliAuthorizationResult>,
   },
   launcher: {
     listTools: () => ipcRenderer.invoke(CH.LAUNCHER_LIST),

@@ -11,7 +11,7 @@ import {
 } from "../src";
 
 const CLOUD_PARITY_HEX =
-  "961d98cc0f5a3524838f195f7a74df6ca23362ea4be2432cd1acdd906a95f0e9";
+  "37b702e386cff1ded780b07b2c679aabdfadf83a93e2d5fbc8dc931268cf394a";
 
 let tempRoot: string;
 
@@ -34,7 +34,7 @@ function buildFixture(root: string): void {
   fs.mkdirSync(path.join(root, "资料"));
   fs.writeFileSync(path.join(root, "资料", "说明.md"), "中文内容\n");
   fs.writeFileSync(path.join(root, "Aa.txt"), "Aa");
-  fs.writeFileSync(path.join(root, "aA.txt"), "aA");
+  fs.writeFileSync(path.join(root, "aB.txt"), "aB");
   fs.mkdirSync(path.join(root, "assets"));
   const block = Buffer.from(Array.from({ length: 256 }, (_, index) => index));
   fs.writeFileSync(

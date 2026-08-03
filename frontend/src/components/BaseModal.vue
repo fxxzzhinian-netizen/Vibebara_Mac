@@ -1,11 +1,12 @@
 <script lang="ts">
 // 模块级弹窗栈：保证嵌套弹窗时，Esc 只关闭最顶层的一个。
 let modalUid = 0
+let modalZIndex = 1000
 const modalStack: number[] = []
 </script>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 /**
  * 全局弹窗外壳：统一遮罩 + 圆角卡片 + 顶部标题栏（含右上角 × 关闭）。
@@ -43,6 +44,8 @@ const boxStyle = computed(() => {
   const w = typeof props.width === 'number' ? `${props.width}px` : props.width
   return { width: w }
 })
+const activeZIndex = ref(1000)
+const overlayStyle = computed(() => ({ zIndex: activeZIndex.value }))
 
 function close() {
   if (!props.closable) return
@@ -64,12 +67,14 @@ function onKeydown(e: KeyboardEvent) {
 function popStack() {
   const i = modalStack.indexOf(myId)
   if (i >= 0) modalStack.splice(i, 1)
+  if (modalStack.length === 0) modalZIndex = 1000
 }
 
 watch(
   () => props.modelValue,
   (open) => {
     if (open) {
+      activeZIndex.value = ++modalZIndex
       modalStack.push(myId)
       window.addEventListener('keydown', onKeydown)
     } else {
@@ -88,7 +93,7 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <Transition name="bm-fade">
-      <div v-if="modelValue" class="bm-overlay" @click.self="onOverlay">
+      <div v-if="modelValue" class="bm-overlay" :style="overlayStyle" @click.self="onOverlay">
         <div class="bm-box" :style="boxStyle" role="dialog" aria-modal="true">
           <header class="bm-header">
             <h3 class="bm-title">{{ title }}</h3>

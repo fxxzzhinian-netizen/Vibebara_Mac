@@ -4,8 +4,8 @@
   "description": "Headless Vibebara skill collaboration CLI.",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/program.js",
+  "types": "dist/program.d.ts",
   "bin": {
     "vibebara": "dist/index.js"
   },
@@ -15,13 +15,16 @@
   ],
   "scripts": {
     "build": "tsc",
+    "bundle:win": "node scripts/build-sea.cjs --bundle-only",
+    "sea:win": "node scripts/build-sea.cjs",
     "prepack": "npm run build",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "verify:distribution": "node scripts/verify-distribution.cjs",
     "start": "node dist/index.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@vibebara/local-core": "file:../local-core",
@@ -32,6 +35,8 @@
   ],
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "esbuild": "^0.28.1",
+    "postject": "^1.0.0-alpha.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
