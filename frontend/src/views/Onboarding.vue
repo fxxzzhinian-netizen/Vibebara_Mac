@@ -7,7 +7,6 @@ import { listTools, type ToolInfo, type ToolId } from '@/api/launcher'
 import { toast } from '@/composables/useToast'
 import AppLoader from '@/components/AppLoader.vue'
 import logoUrl from '@/img/logo.png'
-import loginBg from '@/img/login_bg.png'
 import soloIllus from '@/img/card/solo.png'
 import teamIllus from '@/img/card/team.png'
 import cursorIcon from '@/img/icon/cursor.svg'
@@ -268,7 +267,7 @@ async function finish() {
 </script>
 
 <template>
-  <div class="onboarding-page" :style="{ backgroundImage: `url(${loginBg})` }">
+  <div class="onboarding-page">
     <img class="page-logo" :src="logoUrl" alt="vibebara" draggable="false" />
 
     <!-- 阶段一：使用场景二选一 -->
@@ -506,6 +505,9 @@ async function finish() {
 .tools-body {
   position: relative;
   width: 100%;
+  margin-top: -24px;
+  transform: scale(1.15);
+  transform-origin: top center;
 }
 
 .tools-body.is-loading {

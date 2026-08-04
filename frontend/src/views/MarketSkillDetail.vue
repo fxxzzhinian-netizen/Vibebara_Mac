@@ -440,20 +440,20 @@ watch(marketId, () => {
                 </section>
 
                 <!-- Basic -->
-                <section v-else-if="activeTab === 'basic'" key="basic" class="form-section full-width">
+                <section v-else-if="activeTab === 'basic'" key="basic" class="form-section full-width basic-fill">
                   <div class="content-card">
                     <h3 class="card-title">通用信息</h3>
                     <div class="form-row">
                       <label>名称</label>
                       <input :value="cfg.name || displayName" disabled class="form-input disabled" />
                     </div>
-                    <div class="form-row">
+                    <div class="form-row description-fill">
                       <label>描述</label>
                       <textarea
                         :value="cfg.description || listing?.description || ''"
                         disabled
                         class="form-input textarea"
-                        rows="4"
+                        rows="8"
                       ></textarea>
                     </div>
                     <div class="meta-inline">
@@ -763,7 +763,7 @@ watch(marketId, () => {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  background: #ffffff;
+  background: #eef0f3;
   border: 1px solid #ebedf0;
   border-radius: 14px;
   padding: 0.5rem;
@@ -801,7 +801,7 @@ watch(marketId, () => {
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.tab-side-item:hover:not(.active) { background: #f6f7f8; color: #151717; }
+.tab-side-item:hover:not(.active) { background: #e3e6eb; color: #151717; }
 .tab-side-item.active { color: #ffffff; font-weight: 600; }
 .tab-badge {
   display: inline-block;
@@ -824,8 +824,9 @@ watch(marketId, () => {
   overflow-y: auto;
   padding: 0.25rem 0.25rem 1.5rem;
 }
-.tab-pane-group { display: grid; }
+.tab-pane-group { display: grid; min-height: 100%; }
 .tab-pane-group > * { grid-area: 1 / 1; align-self: start; }
+.tab-pane-group > .basic-fill { align-self: stretch; }
 .tab-pane-group.animating { overflow: hidden; }
 
 .pane-down-enter-active,
@@ -844,6 +845,21 @@ watch(marketId, () => {
 .full-width { max-width: 100%; }
 
 .content-card { background: transparent; border: none; padding: 0; min-width: 0; }
+.basic-fill .content-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.description-fill {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+.description-fill .textarea {
+  flex: 1;
+  min-height: 160px;
+}
 .card-title {
   margin: 0 0 1.2rem;
   font-size: 1.2rem;
