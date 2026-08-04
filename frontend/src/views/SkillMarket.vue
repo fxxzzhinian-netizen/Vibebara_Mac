@@ -6,8 +6,6 @@ import AppTopNav from '@/components/AppTopNav.vue'
 import { toast } from '@/composables/useToast'
 import { confirmDialog } from '@/composables/useConfirmDialog'
 import { promptInput } from '@/composables/useInputDialog'
-import { useSlideIndicator } from '@/composables/useSlideIndicator'
-import { useDirectionalTransition } from '@/composables/useDirectionalTransition'
 import {
   listMarket,
   listMine,
@@ -30,7 +28,7 @@ import emptyImg from '@/img/status/empty.png'
 const authStore = useAuthStore()
 const router = useRouter()
 
-type Tab = 'market' | 'mine' | 'review' | 'admins'
+type Tab = 'market' | 'mine' | 'admin'
 const activeTab = ref<Tab>('market')
 
 // 点击卡片进入只读「SKILL 介绍」详情页。
@@ -42,37 +40,7 @@ const isReviewer = computed(() => !!authStore.user?.is_reviewer)
 const canManageAdmins = computed(() => !!authStore.user?.can_manage_admins)
 const currentUserId = computed(() => authStore.user?.id ?? '')
 
-const tabs = computed<{ key: Tab; label: string }[]>(() => {
-  const base: { key: Tab; label: string }[] = [
-    { key: 'market', label: '市场' },
-    { key: 'mine', label: '我的发布' },
-  ]
-  if (isReviewer.value) base.push({ key: 'review', label: '审核' })
-  if (canManageAdmins.value) base.push({ key: 'admins', label: '管理员' })
-  return base
-})
-
-// 分段切换：选中态白色滑块随激活分页平滑滑动（与顶栏/编辑器一致）。
-// trigger 同时观察激活分页与分页数量（审核/管理员分页按权限增减时重新测量）。
-const segRef = ref<HTMLElement | null>(null)
-const { style: segSliderStyle, ready: segSliderReady } = useSlideIndicator({
-  container: segRef,
-  activeSelector: '.seg-item.active',
-  axis: 'x',
-  trigger: () => [activeTab.value, tabs.value.length],
-})
-
-// 内容面板方向感知过渡：右切（forward）从右滑入、左切（backward）从左滑入。
-const TAB_ORDER = ['market', 'mine', 'review', 'admins'] as const
-const {
-  name: paneTransition,
-  animating: paneAnimating,
-  end: paneTransitionEnd,
-} = useDirectionalTransition({
-  value: () => activeTab.value,
-  order: TAB_ORDER,
-  names: { forward: 'pane-fwd', backward: 'pane-bwd' },
-})
+const showAdminSection = computed(() => isReviewer.value || canManageAdmins.value)
 
 const SKELETON = 6
 const loading = ref(false)
@@ -152,11 +120,34 @@ async function refreshAdmins() {
   }
 }
 
+async function refreshAdminWorkspace() {
+  loading.value = true
+  error.value = ''
+  try {
+    const [pendingRes, adminsRes] = await Promise.all([
+      isReviewer.value ? listPending() : Promise.resolve(null),
+      canManageAdmins.value ? listPlatformAdmins() : Promise.resolve(null),
+    ])
+
+    if (pendingRes) {
+      if (pendingRes.success) pendingSkills.value = pendingRes.skills
+      else error.value = pendingRes.error || '获取审核队列失败'
+    }
+    if (adminsRes) {
+      if (adminsRes.success) admins.value = adminsRes.admins
+      else if (!error.value) error.value = adminsRes.error || '获取管理员列表失败'
+    }
+  } catch (e: any) {
+    error.value = e?.response?.data?.detail || e.message || '请求异常'
+  } finally {
+    loading.value = false
+  }
+}
+
 function loadTab(tab: Tab) {
   if (tab === 'market') return refreshMarket()
   if (tab === 'mine') return refreshMine()
-  if (tab === 'review') return refreshPending()
-  if (tab === 'admins') return refreshAdmins()
+  if (tab === 'admin') return refreshAdminWorkspace()
 }
 
 async function acquire(item: MarketSkillItem) {
@@ -308,34 +299,39 @@ onMounted(() => {
     <AppTopNav />
 
     <main class="home-main">
-      <!-- 工具行：标题 + 分段切换 -->
+      <!-- 一级分区：标题与菜单在同一左侧导航中 -->
       <div class="toolbar">
-        <div class="toolbar-titles">
-          <h1 class="page-title">SKILL 市场</h1>
-        </div>
-        <div ref="segRef" class="seg">
-          <span class="seg-slider" :class="{ ready: segSliderReady }" :style="segSliderStyle"></span>
+        <nav class="section-nav" aria-label="SKILL 市场分区">
           <button
-            v-for="t in tabs"
-            :key="t.key"
-            :class="['seg-item', { active: activeTab === t.key }]"
-            @click="activeTab = t.key"
+            type="button"
+            data-label="SKILL 市场"
+            :class="['section-nav-item', 'section-nav-title', { active: activeTab === 'market' }]"
+            @click="activeTab = 'market'"
           >
-            {{ t.label }}
+            SKILL 市场
           </button>
-        </div>
+          <button
+            type="button"
+            data-label="我的 SKILL"
+            :class="['section-nav-item', { active: activeTab === 'mine' }]"
+            @click="activeTab = 'mine'"
+          >
+            我的 SKILL
+          </button>
+          <button
+            v-if="showAdminSection"
+            type="button"
+            data-label="SKILL 管理员"
+            :class="['section-nav-item', { active: activeTab === 'admin' }]"
+            @click="activeTab = 'admin'"
+          >
+            SKILL 管理员
+          </button>
+        </nav>
       </div>
 
-      <!-- 内容区：分页切换按方向滑入滑出（与编辑器正文一致） -->
-      <transition-group
-        tag="div"
-        class="pane-group"
-        :class="{ animating: paneAnimating }"
-        :name="paneTransition"
-        @after-enter="paneTransitionEnd"
-        @after-leave="paneTransitionEnd"
-        @enter-cancelled="paneTransitionEnd"
-      >
+      <!-- 内容区 -->
+      <div class="pane-group">
         <section :key="activeTab" class="pane">
           <!-- 加载骨架 -->
           <div v-if="loading" class="skill-grid">
@@ -442,74 +438,82 @@ onMounted(() => {
         </div>
       </template>
 
-      <!-- 审核（审核员） -->
-      <template v-else-if="activeTab === 'review'">
-        <div v-if="pendingSkills.length" class="skill-grid">
-          <div
-            v-for="s in pendingSkills"
-            :key="s.id"
-            class="skill-card clickable"
-            role="button"
-            tabindex="0"
-            @click="openDetail(s)"
-            @keydown.enter="openDetail(s)"
-          >
-            <div class="card-head">
-              <span class="card-name">{{ s.display_name || s.source_skill_id }}</span>
-              <span class="card-version">v{{ s.version }}</span>
+      <!-- SKILL 管理员：审核与管理员设置合并在同一页面 -->
+      <template v-else-if="activeTab === 'admin'">
+        <section v-if="isReviewer" class="admin-section">
+          <div class="admin-section-head">
+            <div>
+              <h2>待审核</h2>
+              <p>共 {{ pendingSkills.length }} 个待审核发布</p>
             </div>
-            <p class="card-desc">{{ skillDesc(s) }}</p>
-            <div v-if="s.tags?.length" class="card-tags">
-              <span v-for="tag in s.tags.slice(0, 4)" :key="tag" class="tag">{{ tag }}</span>
-            </div>
-            <div class="card-foot">
-              <div class="foot-meta">
-                <span :class="['src-tag', s.source_scope]">{{ s.source_scope === 'team' ? '团队' : '个人' }}</span>
-                <span class="publisher">{{ s.publisher_name }}</span>
+          </div>
+          <div v-if="pendingSkills.length" class="skill-grid">
+            <div
+              v-for="s in pendingSkills"
+              :key="s.id"
+              class="skill-card clickable"
+              role="button"
+              tabindex="0"
+              @click="openDetail(s)"
+              @keydown.enter="openDetail(s)"
+            >
+              <div class="card-head">
+                <span class="card-name">{{ s.display_name || s.source_skill_id }}</span>
+                <span class="card-version">v{{ s.version }}</span>
               </div>
-              <div class="foot-actions">
-                <button class="btn-mini ghost" @click.stop="reject(s)">拒绝</button>
-                <button class="btn-mini approve" @click.stop="approve(s)">通过</button>
+              <p class="card-desc">{{ skillDesc(s) }}</p>
+              <div v-if="s.tags?.length" class="card-tags">
+                <span v-for="tag in s.tags.slice(0, 4)" :key="tag" class="tag">{{ tag }}</span>
+              </div>
+              <div class="card-foot">
+                <div class="foot-meta">
+                  <span :class="['src-tag', s.source_scope]">{{ s.source_scope === 'team' ? '团队' : '个人' }}</span>
+                  <span class="publisher">{{ s.publisher_name }}</span>
+                </div>
+                <div class="foot-actions">
+                  <button class="btn-mini ghost" @click.stop="reject(s)">拒绝</button>
+                  <button class="btn-mini approve" @click.stop="approve(s)">通过</button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div v-else class="empty-state">
-          <div class="empty-illu"><img :src="emptyImg" alt="" draggable="false" /></div>
-          <h2>没有待审核的发布</h2>
-          <p>新的发布申请会出现在这里</p>
-        </div>
-      </template>
+          <div v-else class="admin-empty">
+            <strong>没有待审核的发布</strong>
+            <span>新的发布申请会出现在这里</span>
+          </div>
+        </section>
 
-      <!-- 管理员（种子用户） -->
-      <template v-else-if="activeTab === 'admins'">
-        <div class="admin-bar">
-          <span class="count">共 {{ admins.length }} 位平台管理员</span>
-          <button class="btn-primary" @click="addAdmin"><span class="plus">+</span> 添加管理员</button>
-        </div>
-        <div v-if="admins.length" class="admin-list">
-          <div v-for="a in admins" :key="a.id" class="admin-row">
-            <div class="admin-avatar">{{ (a.display_name || a.username).slice(0, 1).toUpperCase() }}</div>
-            <div class="admin-info">
-              <div class="admin-name">{{ a.display_name || a.username }}</div>
-              <div class="admin-username">@{{ a.username }}</div>
+        <section v-if="canManageAdmins" class="admin-section">
+          <div class="admin-section-head">
+            <div>
+              <h2>管理员设置</h2>
+              <p>共 {{ admins.length }} 位平台管理员</p>
             </div>
-            <span v-if="a.is_seed_user" class="seed-tag">种子用户</span>
-            <button
-              v-else
-              class="btn-mini danger"
-              @click="revokeAdmin(a)"
-            >移除</button>
+            <button class="btn-primary" @click="addAdmin"><span class="plus">+</span> 添加管理员</button>
           </div>
-        </div>
-        <div v-else class="empty-state">
-          <div class="empty-illu"><img :src="emptyImg" alt="" draggable="false" /></div>
-          <h2>还没有平台管理员</h2>
-          <p>添加平台管理员后，他们可以审核市场发布</p>
-        </div>
+          <div v-if="admins.length" class="admin-list">
+            <div v-for="a in admins" :key="a.id" class="admin-row">
+              <div class="admin-avatar">{{ (a.display_name || a.username).slice(0, 1).toUpperCase() }}</div>
+              <div class="admin-info">
+                <div class="admin-name">{{ a.display_name || a.username }}</div>
+                <div class="admin-username">@{{ a.username }}</div>
+              </div>
+              <span v-if="a.is_seed_user" class="seed-tag">种子用户</span>
+              <button
+                v-else
+                class="btn-mini danger"
+                @click="revokeAdmin(a)"
+              >移除</button>
+            </div>
+          </div>
+          <div v-else class="admin-empty">
+            <strong>还没有平台管理员</strong>
+            <span>添加管理员后，他们可以审核市场发布</span>
+          </div>
+        </section>
       </template>
         </section>
-      </transition-group>
+      </div>
     </main>
   </div>
 </template>
@@ -529,27 +533,18 @@ onMounted(() => {
   padding: 2rem;
 }
 
-/* —— 工具行 —— */
+/* —— 标题区文字分选 —— */
 .toolbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: center;
   margin-bottom: 1.75rem;
 }
 
-.toolbar-titles {
+.section-nav {
   display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #151717;
+  align-items: flex-end;
+  gap: 2.25rem;
+  height: 2.1rem;
 }
 
 .count {
@@ -557,61 +552,91 @@ onMounted(() => {
   color: #9ca3af;
 }
 
-/* —— 分段切换 —— */
-.seg {
+.section-nav-item {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border-radius: 999px;
-  background: #f0f1f3;
-}
-
-/* 选中态白色胶囊滑块：绝对定位于分页项之下，随选中项平滑滑动 + 变宽。 */
-.seg-slider {
-  position: absolute;
-  top: 0.25rem;
-  bottom: 0.25rem;
-  left: 0;
-  width: 0;
-  border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(21, 23, 23, 0.1);
-  opacity: 0;
-  z-index: 0;
-  pointer-events: none;
-  will-change: transform, width;
-}
-
-.seg-slider.ready {
-  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-    width 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
-}
-
-.seg-item {
-  position: relative;
-  z-index: 1;
+  padding: 0;
   border: none;
-  border-radius: 999px;
   background: transparent;
-  color: #5f6368;
+  color: #8a93a5;
   font-family: inherit;
-  font-size: 0.86rem;
-  font-weight: 500;
-  padding: 0.4rem 0.95rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color 0.18s ease, font-size 0.2s ease;
 }
 
-.seg-item:hover:not(.active) {
-  color: #202124;
+.section-nav-item::before {
+  content: attr(data-label);
+  display: block;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: nowrap;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
-/* 选中项：文字加深加粗；白色胶囊底由 .seg-slider 提供（可滑动） */
-.seg-item.active {
-  color: #151717;
+.section-nav-item:hover,
+.section-nav-item.active {
+  color: #2f3342;
+}
+
+.section-nav-item.active {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.section-nav-title {
+  margin-right: 0.35rem;
+}
+
+.admin-section + .admin-section {
+  margin-top: 3rem;
+}
+
+.admin-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-section-head h2 {
+  margin: 0 0 0.25rem;
+  color: #2f3342;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.admin-section-head p {
+  margin: 0;
+  color: #8a93a5;
+  font-size: 0.82rem;
+}
+
+.admin-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1.25rem 1.4rem;
+  border-radius: 12px;
+  background: #f6f7fa;
+  color: #5f6677;
+  font-size: 0.86rem;
+}
+
+.admin-empty strong {
+  color: #2f3342;
   font-weight: 600;
+}
+
+.admin-empty span {
+  color: #8a93a5;
+  font-size: 0.82rem;
 }
 
 /* —— 错误态 —— */
@@ -643,45 +668,6 @@ onMounted(() => {
 
 .btn-retry:hover {
   background: #fef2f2;
-}
-
-/* —— 分页内容方向过渡（进出叠放于同一网格单元，避免位移挤动布局） —— */
-.pane-group {
-  display: grid;
-}
-
-.pane-group > * {
-  grid-area: 1 / 1;
-  align-self: start;
-}
-
-.pane-group.animating {
-  overflow: hidden;
-}
-
-.pane-fwd-enter-active,
-.pane-fwd-leave-active,
-.pane-bwd-enter-active,
-.pane-bwd-leave-active {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.24s ease;
-  will-change: transform, opacity;
-}
-
-.pane-fwd-enter-from {
-  opacity: 0;
-  transform: translateX(30px);
-}
-.pane-fwd-leave-to {
-  opacity: 0;
-  transform: translateX(-30px);
-}
-.pane-bwd-enter-from {
-  opacity: 0;
-  transform: translateX(-30px);
-}
-.pane-bwd-leave-to {
-  opacity: 0;
-  transform: translateX(30px);
 }
 
 /* —— 卡片网格 —— */
@@ -1074,7 +1060,8 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .home-main { padding: 1.25rem 1rem; }
-  .toolbar { flex-direction: column; align-items: stretch; }
+  .section-nav { gap: 1rem; flex-wrap: wrap; }
+  .section-nav-title { width: 100%; margin-right: 0; }
   .skill-grid { grid-template-columns: 1fr; }
 }
 </style>

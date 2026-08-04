@@ -655,7 +655,7 @@ function timeAgo(ts: string | null | undefined): string {
                 @enter-cancelled="paneTransitionEnd"
               >
               <!-- Basic -->
-              <section v-if="activeTab === 'basic'" key="basic" class="form-section full-width">
+              <section v-if="activeTab === 'basic'" key="basic" class="form-section full-width basic-fill">
                 <div class="content-card">
                   <h3 class="card-title">通用信息</h3>
                   <div class="form-row">
@@ -665,7 +665,7 @@ function timeAgo(ts: string | null | undefined): string {
                     </label>
                     <input :value="cfg.name || skillId" disabled class="form-input disabled" />
                   </div>
-                  <div class="form-row">
+                  <div class="form-row description-fill">
                     <label class="label-with-tip">
                       描述
                       <HelpTip text="说明 Skill 做什么、何时使用；所有平台共用。" :size="14" />
@@ -674,7 +674,7 @@ function timeAgo(ts: string | null | undefined): string {
                       :value="view.description"
                       :disabled="!editing"
                       class="form-input textarea"
-                      rows="5"
+                      rows="8"
                       placeholder="简要描述 Skill 的用途"
                       @input="setDraft('description', ($event.target as HTMLTextAreaElement).value)"
                     ></textarea>
@@ -1421,7 +1421,7 @@ function timeAgo(ts: string | null | undefined): string {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  background: #ffffff;
+  background: #eef0f3;
   border: 1px solid #ebedf0;
   border-radius: 14px;
   padding: 0.5rem;
@@ -1459,7 +1459,7 @@ function timeAgo(ts: string | null | undefined): string {
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.tab-side-item:hover:not(.active) { background: #f6f7f8; color: #151717; }
+.tab-side-item:hover:not(.active) { background: #e3e6eb; color: #151717; }
 /* 选中项：文字转白加粗；黑色底由 .tab-slider 提供（可滑动） */
 .tab-side-item.active { color: #ffffff; font-weight: 600; }
 
@@ -1485,10 +1485,14 @@ function timeAgo(ts: string | null | undefined): string {
 /* 正文滑动容器：切换标签时新旧面板同处一格叠放，沿纵向滑入滑出。 */
 .tab-pane-group {
   display: grid;
+  min-height: 100%;
 }
 .tab-pane-group > * {
   grid-area: 1 / 1;
   align-self: start;
+}
+.tab-pane-group > .basic-fill {
+  align-self: stretch;
 }
 /* 仅在切换动画期间裁剪，避免纵向位移溢出滚动区。 */
 .tab-pane-group.animating {
@@ -1530,6 +1534,21 @@ function timeAgo(ts: string | null | undefined): string {
   border-radius: 0;
   padding: 0;
   min-width: 0;
+}
+.basic-fill .content-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.description-fill {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+.description-fill .textarea {
+  flex: 1;
+  min-height: 160px;
 }
 .card-title {
   display: flex;

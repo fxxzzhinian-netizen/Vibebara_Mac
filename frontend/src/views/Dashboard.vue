@@ -216,6 +216,10 @@ onMounted(() => {
 .home {
   min-height: 100vh;
   background: var(--canvas);
+  --card-border: #dfe3ea;
+  --card-border-hover: #b9c0cc;
+  --card-shadow: 0 1px 3px rgba(47, 51, 66, 0.06);
+  --card-shadow-hover: 0 8px 20px rgba(47, 51, 66, 0.1);
   color: #151717;
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
     Ubuntu, sans-serif;
@@ -404,16 +408,17 @@ onMounted(() => {
      描述长短（一行/两行）不再改变卡片高度 */
   min-height: 180px;
   padding: 1.25rem 1.3rem;
-  border: 1px solid #ebedf0;
+  border: 1px solid var(--card-border);
   border-radius: 16px;
   background: #ffffff;
+  box-shadow: var(--card-shadow);
   cursor: pointer;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .skill-card:hover {
-  border-color: #d1d5db;
-  box-shadow: 0 8px 24px rgba(21, 23, 23, 0.07);
+  border-color: var(--card-border-hover);
+  box-shadow: var(--card-shadow-hover);
   transform: translateY(-2px);
 }
 

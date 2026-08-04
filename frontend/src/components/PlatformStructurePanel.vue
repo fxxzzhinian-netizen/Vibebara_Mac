@@ -800,40 +800,40 @@ watch(activePlatform, () => {
   width: 100%;
 }
 
-/* Segmented Nav（分段控件，无整条底栏，适配内嵌） */
+/* 平台导航：独立文字按钮，激活项使用浅灰色悬浮块 */
 .segment-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+  align-items: center;
+  gap: 0.35rem;
   margin-bottom: 1.75rem;
-  border-bottom: 1px solid #e5e7eb;
 }
 
 .seg-btn {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.8rem 1.35rem;
-  margin-bottom: -1px;
+  padding: 0.55rem 1.15rem;
   background: transparent;
   border: none;
-  border-bottom: 3px solid transparent;
+  border-radius: 12px;
   color: #6b7280;
   font-size: 1.02rem;
   font-weight: 500;
   font-family: inherit;
   -webkit-tap-highlight-color: transparent;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition: color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .seg-btn:hover { color: #151717; }
-.seg-btn:hover:not(.active) { border-bottom-color: #d1d5db; }
+.seg-btn:hover:not(.active) { background: #f6f7fa; }
 
 .seg-btn.active {
   color: #151717;
   font-weight: 600;
-  border-bottom-color: #151717;
+  background: #eef0f3;
+  box-shadow: 0 3px 10px rgba(47, 51, 66, 0.1);
 }
 
 .seg-icon {
@@ -850,8 +850,8 @@ watch(activePlatform, () => {
   filter: none;
   opacity: 1;
 }
-/* 总览为线性图标，跟随文字色 */
-svg.seg-icon { color: inherit; filter: none; }
+/* 总览为更紧凑的线性图标，跟随文字色 */
+svg.seg-icon { width: 18px; height: 18px; color: inherit; filter: none; }
 
 /* Overview */
 .overview-intro {
@@ -868,10 +868,8 @@ svg.seg-icon { color: inherit; filter: none; }
 
 .field-table-card {
   background: #ffffff;
-  border: 1px solid #ebedf0;
-  border-radius: 16px;
-  padding: 0.5rem 1.25rem;
-  box-shadow: 0 2px 8px rgba(17, 23, 23, 0.04);
+  border: none;
+  border-radius: 0;
   overflow-x: auto;
 }
 .field-table-wrapper h3 {
@@ -880,10 +878,8 @@ svg.seg-icon { color: inherit; filter: none; }
   gap: 0.4rem;
   font-size: 1.18rem;
   font-weight: 600;
-  color: #151717;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #ebedf0;
+  color: #2f3342;
+  margin-bottom: 0.9rem;
 }
 
 /* Help tooltip */
@@ -946,8 +942,10 @@ svg.seg-icon { color: inherit; filter: none; }
 
 .field-table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.98rem;
+  min-width: 980px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.88rem;
 }
 
 /* Let the last column (说明 / 构建映射) absorb extra width so the
@@ -959,40 +957,63 @@ svg.seg-icon { color: inherit; filter: none; }
 
 .field-table th {
   text-align: left;
-  padding: 0.72rem 0.9rem;
+  padding: 0.78rem 1rem;
+  background: #e8ebf0;
   font-weight: 600;
-  font-size: 0.86rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #9ca3af;
-  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  color: #5f6677;
+  border-bottom: 1px solid #e2e6ec;
   white-space: nowrap;
 }
 
-.field-table td {
-  padding: 0.68rem 0.9rem;
-  border-bottom: 1px solid #f3f4f6;
+.field-table th:not(:first-child):not(:last-child) {
+  text-align: center;
 }
 
-.field-table tr:hover td { background: #fafafb; }
+.field-table th:first-child,
+.field-table td:first-child {
+  min-width: 210px;
+}
+
+.field-table td {
+  padding: 0.76rem 1rem;
+  color: #5f6677;
+  border-bottom: 1px solid #edf0f4;
+  vertical-align: middle;
+  transition: background-color 0.15s ease;
+}
+
+.field-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.field-table tbody tr:hover td {
+  background: #eef0f3;
+}
 
 .field-name {
-  font-weight: 500;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.92rem;
-  color: #151717;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.82rem;
+  color: #2f3342;
 }
 
-.field-note { color: #6b7280; font-size: 0.88rem; }
+.field-note {
+  min-width: 260px;
+  color: #8a93a5;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
 
 .support {
   text-align: center;
+  width: 72px;
+  font-size: 1rem;
   font-weight: 700;
-  width: 80px;
-  font-size: 1.05rem;
 }
 .support.yes { color: #16a34a; }
-.support.no { color: #dc2626; opacity: 0.6; }
+.support.no { color: #b6bdc9; opacity: 1; }
 
 /* Platform Detail */
 .platform-info-bar {
@@ -1081,20 +1102,20 @@ svg.seg-icon { color: inherit; filter: none; }
 .form-input {
   width: 100%;
   padding: 0.68rem 0.85rem;
-  background: #f6f7f8;
-  border: 1px solid #e5e7eb;
+  background: #eef0f3;
+  border: none;
   border-radius: 8px;
   color: #151717;
   font-size: 1rem;
   font-family: inherit;
-  transition: border-color 0.15s ease;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
   box-sizing: border-box;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: #6366f1;
-  background: #ffffff;
+  background: #e5e8ed;
+  box-shadow: inset 0 0 0 1.5px #151717;
 }
 
 .form-input.textarea {
@@ -1114,14 +1135,63 @@ svg.seg-icon { color: inherit; filter: none; }
 }
 
 .color-picker {
-  width: 42px;
-  height: 42px;
-  border: 1px solid #e5e7eb;
-  border-radius: 7px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
   cursor: pointer;
-  background: none;
-  padding: 2px;
+  background: transparent;
+  padding: 0;
   flex-shrink: 0;
+}
+
+.color-picker::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-picker::-webkit-color-swatch {
+  border: 1px solid #d6dae2;
+  border-radius: 8px;
+}
+
+.color-picker::-moz-color-swatch {
+  border: 1px solid #d6dae2;
+  border-radius: 8px;
+}
+
+.color-picker:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.color-picker:focus-visible::-webkit-color-swatch {
+  border-color: #151717;
+  border-width: 1.5px;
+}
+
+.color-picker:focus-visible::-moz-color-swatch {
+  border-color: #151717;
+  border-width: 1.5px;
+}
+
+.platform-fields :deep(.bs-trigger),
+.platform-fields :deep(.picker-display) {
+  border: none;
+  background: #eef0f3;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.platform-fields :deep(.bs-trigger:hover:not(.disabled)),
+.platform-fields :deep(.picker-display:hover) {
+  background: #e5e8ed;
+}
+
+.platform-fields :deep(.bs-trigger:focus-visible),
+.platform-fields :deep(.bs-trigger.open),
+.platform-fields :deep(.picker-display:focus-within) {
+  border: none;
+  background: #e5e8ed;
+  box-shadow: inset 0 0 0 1.5px #151717;
 }
 
 /* Build info modal */
