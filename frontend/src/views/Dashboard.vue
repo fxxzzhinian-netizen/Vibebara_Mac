@@ -216,8 +216,8 @@ onMounted(() => {
 .home {
   min-height: 100vh;
   background: var(--canvas);
-  --card-border: #dfe3ea;
-  --card-border-hover: #b9c0cc;
+  --card-border: #d1d5db;
+  --card-border-hover: #151717;
   --card-shadow: 0 1px 3px rgba(47, 51, 66, 0.06);
   --card-shadow-hover: 0 8px 20px rgba(47, 51, 66, 0.1);
   color: #151717;
@@ -249,7 +249,7 @@ onMounted(() => {
 
 .page-title {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: #151717;
@@ -401,6 +401,7 @@ onMounted(() => {
 }
 
 .skill-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
@@ -408,18 +409,45 @@ onMounted(() => {
      描述长短（一行/两行）不再改变卡片高度 */
   min-height: 180px;
   padding: 1.25rem 1.3rem;
-  border: 1px solid var(--card-border);
+  border: 2px solid var(--card-border);
   border-radius: 16px;
   background: #ffffff;
   box-shadow: var(--card-shadow);
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.skill-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: radial-gradient(
+    ellipse 145% 135% at 0% 100%,
+    color-mix(in srgb, var(--card-border-hover) 92%, transparent) 0%,
+    color-mix(in srgb, var(--card-border-hover) 50%, transparent) 38%,
+    color-mix(in srgb, var(--card-border-hover) 20%, transparent) 70%,
+    color-mix(in srgb, var(--card-border-hover) 7%, transparent) 100%
+  );
+  clip-path: circle(0% at 0% 100%);
+  pointer-events: none;
+  transition: clip-path 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: clip-path;
+  z-index: 0;
+}
+
+.skill-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .skill-card:hover {
-  border-color: var(--card-border-hover);
+  border-color: transparent;
   box-shadow: var(--card-shadow-hover);
-  transform: translateY(-2px);
+}
+
+.skill-card:hover::after {
+  clip-path: circle(220% at 0% 100%);
 }
 
 .card-head {
@@ -458,8 +486,13 @@ onMounted(() => {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  transition: color 0.22s ease;
   /* 始终预留两行高度（1.55 行高 × 2 行），描述一行时也占满，避免挤压卡片 */
   min-height: 3.1em;
+}
+
+.skill-card:hover .card-desc {
+  color: #ffffff;
 }
 
 .card-tags {

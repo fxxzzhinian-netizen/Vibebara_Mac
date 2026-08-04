@@ -36,8 +36,8 @@ const DEV_DEFAULTS: CloudConfig = {
 // 当前线上尚未部署 TLS，安装包暂时沿用 HTTP/WS 公网地址。
 // 迁移到 HTTPS/WSS 后应替换这里，并关闭 validateEndpoint 的远程明文兼容开关。
 const PACKAGED_DEFAULTS: CloudConfig = {
-  cloudApiBase: "http://43.136.128.162:8000/api/v1",
-  cloudWsBase: "ws://43.136.128.162:8000",
+  cloudApiBase: "http://162.14.106.190:8000/api/v1",
+  cloudWsBase: "ws://162.14.106.190:8000",
   updateUrl: "",
   writableRoots: [],
 };

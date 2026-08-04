@@ -1114,8 +1114,8 @@ svg.seg-icon { width: 18px; height: 18px; color: inherit; filter: none; }
 
 .form-input:focus {
   outline: none;
-  background: #e5e8ed;
-  box-shadow: inset 0 0 0 1.5px #151717;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2px #151717;
 }
 
 .form-input.textarea {
@@ -1190,8 +1190,8 @@ svg.seg-icon { width: 18px; height: 18px; color: inherit; filter: none; }
 .platform-fields :deep(.bs-trigger.open),
 .platform-fields :deep(.picker-display:focus-within) {
   border: none;
-  background: #e5e8ed;
-  box-shadow: inset 0 0 0 1.5px #151717;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2px #151717;
 }
 
 /* Build info modal */

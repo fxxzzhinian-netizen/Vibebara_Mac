@@ -374,37 +374,64 @@ onMounted(() => {
             <span v-if="isTeamSkill" class="readonly-badge">团队仓库只读</span>
           </div>
           <div class="toolbar-right">
-            <button class="btn tool-btn save" :disabled="isTeamSkill || !store.dirty || store.saving" @click="handleSave">
+            <button
+              class="btn tool-btn save"
+              :disabled="isTeamSkill || !store.dirty || store.saving"
+              :title="store.saving ? '保存中…' : '保存'"
+              :aria-label="store.saving ? '保存中' : '保存'"
+              @click="handleSave"
+            >
               <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <path fill="currentColor" d="M845.312 0.512H32.512v1022.976h958.976v-876.8L845.312 0.512z m-172.864 62.976v256H351.488v-256h320.96zM287.488 960.512V605.76l29.184-29.248h390.656l29.184 29.248v354.752H287.488z m640 0h-126.976V585.152L727.424 512H296.576L223.488 585.152v375.36H96.512V63.488h190.976v320.448h449.024V63.488h79.68l111.296 112.32v784.704z m-384-832h65.984v128H543.488v-128z" />
+                <g class="action-icon-shape" fill="currentColor">
+                  <path d="M518.528 709.973333l121.258667-122.453333a32 32 0 0 0-0.426667-45.226667 31.146667 31.146667 0 0 0-44.373333 0l-67.157334 68.266667V404.906667a31.445333 31.445333 0 1 0-62.933333 0v205.653333l-67.157333-68.266667a31.146667 31.146667 0 0 0-44.373334 0 32.426667 32.426667 0 0 0 0 45.226667l120.832 122.453333a32.768 32.768 0 0 0 22.4 9.386667 32.725333 32.725333 0 0 0 21.973334-9.386667z m306.133333-324.864c9.941333-0.128 20.736-0.256 30.592-0.256 10.965333 0 19.413333 8.533333 19.413334 19.2v343.04c0 105.813333-85.333333 191.573333-190.08 191.573334H348.714667C238.506667 938.666667 149.333333 848.64 149.333333 737.706667V277.76C149.333333 171.946667 234.24 85.333333 339.84 85.333333h225.578667c10.581333 0 19.456 8.96 19.456 19.626667v137.386667c0 78.08 63.36 142.08 141.098666 142.506666 17.834667 0 33.834667 0.128 47.786667 0.256 10.794667 0.085333 20.352 0.170667 28.672 0.170667 5.973333 0 13.824-0.085333 22.229333-0.170667z m11.818667-62.293333c-34.688 0.128-75.648 0-105.088-0.298667-46.72 0-85.205333-38.826667-85.205333-86.058666V123.989333c0-18.346667 22.101333-27.52 34.688-14.250666l124.416 130.645333 45.696 48a20.352 20.352 0 0 1-14.506667 34.432z" />
+                </g>
               </svg>
-              {{ store.saving ? '保存中...' : '保存' }}
             </button>
-            <button class="btn tool-btn danger" :disabled="isTeamSkill" @click="handleDelete">
+            <button
+              class="btn tool-btn danger"
+              :disabled="isTeamSkill"
+              title="删除"
+              aria-label="删除"
+              @click="handleDelete"
+            >
               <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <path fill="currentColor" d="M781.28 851.36a58.56 58.56 0 0 1-58.56 58.56H301.28a58.72 58.72 0 0 1-58.56-58.56V230.4h538.56z m-421.6-725.92a11.84 11.84 0 0 1 12-12h281.28a11.84 11.84 0 0 1 12 12V160H359.68zM956.8 160H734.72v-34.56a81.76 81.76 0 0 0-81.76-81.76H371.68a82.08 82.08 0 0 0-81.76 81.76V160H67.2a35.36 35.36 0 0 0 0 70.56h105.12v620.8a128.96 128.96 0 0 0 128.96 128.96h421.44a128.96 128.96 0 0 0 128.96-128.96V230.4H956.8a35.2 35.2 0 0 0 35.2-35.2 34.56 34.56 0 0 0-35.2-35.2zM512 804.16a35.2 35.2 0 0 0 35.2-35.36V393.92a35.2 35.2 0 1 0-70.4 0V768.8a35.2 35.2 0 0 0 35.2 35.36m-164.32 0a35.36 35.36 0 0 0 35.36-35.36V393.92a35.36 35.36 0 1 0-70.56 0V768.8a36.32 36.32 0 0 0 35.2 35.36m328.64 0a35.36 35.36 0 0 0 35.2-35.36V393.92a35.36 35.36 0 1 0-70.56 0V768.8a35.36 35.36 0 0 0 35.36 35.36" />
+                <g class="action-icon-shape" fill="currentColor">
+                  <path d="M865.578667 223.701333c16.64 0 30.421333 13.781333 30.421333 31.317334v16.213333a31.146667 31.146667 0 0 1-30.421333 31.317333H158.464A31.146667 31.146667 0 0 1 128 271.232v-16.213333c0-17.536 13.824-31.317333 30.464-31.317334H282.88c25.258667 0 47.232-17.962667 52.906667-43.306666l6.528-29.098667C352.469333 111.658667 385.749333 85.333333 423.893333 85.333333h176.213334c37.717333 0 71.424 26.325333 81.152 63.872l6.954666 31.146667a54.613333 54.613333 0 0 0 52.949334 43.349333h124.416z m-63.189334 592.682667c12.970667-121.045333 35.712-408.618667 35.712-411.52a31.829333 31.829333 0 0 0-7.68-23.808 30.976 30.976 0 0 0-22.357333-9.984H216.32c-8.533333 0-16.682667 3.712-22.357333 9.984a33.706667 33.706667 0 0 0-8.106667 23.808l2.261333 27.605333c6.058667 75.221333 22.912 284.757333 33.834667 383.914667 7.68 73.045333 55.637333 118.954667 125.056 120.618667 53.589333 1.237333 108.8 1.664 165.205333 1.664 53.162667 0 107.093333-0.426667 162.346667-1.664 71.850667-1.237333 119.722667-46.336 127.872-120.618667z" />
+                </g>
               </svg>
-              删除
             </button>
-            <span class="toolbar-divider" aria-hidden="true"></span>
-            <button class="btn tool-btn deploy" :disabled="isTeamSkill || !store.currentId" @click="showDeployModal = true">
+            <button
+              class="btn tool-btn deploy"
+              :disabled="isTeamSkill || !store.currentId"
+              title="部署"
+              aria-label="部署"
+              @click="showDeployModal = true"
+            >
               <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <path fill="currentColor" d="M965.1712 223.03232c-6.1184-47.68256-24.01792-86.77376-53.22752-115.98336-29.19936-29.20448-68.19328-47.09376-115.968-53.21728-43.66848-5.64736-92.672-0.9472-145.53088 13.77792-107.14112 29.91104-217.34912 97.49504-310.25664 190.27456a907.82208 907.82208 0 0 0-28.2624 29.55264c-87.01952-0.70144-166.02624 30.14144-223.47776 87.71584A292.5056 292.5056 0 0 0 28.50304 462.0544a29.4912 29.4912 0 0 0 26.84928 41.55392 30.68416 30.68416 0 0 0 10.71616-2.00192c38.02624-14.96064 82.41152-18.24768 129.63328-9.89184-10.83392 57.09824-1.536 112.2048 27.904 165.888a29.44512 29.44512 0 1 0 51.5328-28.25216c-23.31648-42.50624-42.86976-103.60832 0.93696-191.57504 0.128-0.2304 0.24064-0.34816 0.3584-0.5888 0.34304-0.768 0.73728-1.52064 1.1776-2.24256l1.7664-3.52256 2.10432-3.8912c0.11264-0.11264 0.11264-0.2304 0.2304-0.47104 15.77472-28.96384 37.56544-59.21792 65.00864-90.44992l0.11264-0.11264a782.848 782.848 0 0 1 34.84672-36.98176c62.52544-62.52032 135.40864-113.5872 207.9488-146.944l276.59264 276.59776c-33.32096 72.56576-84.41856 145.39776-146.92864 207.92832-57.70752 57.7024-112.45056 96.66048-163.2 116.33152-0.10752 0.11776-0.35328 0.11776-0.47104 0.23552-1.65888 0.58368-3.30752 1.29536-4.9408 1.8944l-1.05984 0.33792c-1.77152 0.5888-3.42016 1.1776-5.18656 1.77152-0.47616 0.10752-0.93696 0.34304-1.40288 0.48128a221.16864 221.16864 0 0 1-21.66272 5.87776c-50.74432 11.06944-98.31424 1.77152-145.13664-28.49792a29.50144 29.50144 0 0 0-31.91808 49.6128c43.8016 28.26752 89.60512 42.38336 136.832 42.38336a246.36416 246.36416 0 0 0 46.03904-4.52096c8.4224 47.32416 5.0688 91.71968-9.76896 129.74592a29.45024 29.45024 0 0 0 39.43936 37.56032 292.224 292.224 0 0 0 86.90176-59.94496c57.57952-57.56928 88.42752-136.46336 87.72096-223.47264a1059.86048 1059.86048 0 0 0 29.54752-28.25728c92.90752-92.90752 160.49152-202.9824 190.27456-310.25664 14.80704-52.68992 19.4048-101.54496 13.87008-145.34656zM212.90496 435.08736a344.77056 344.77056 0 0 0-66.64704-6.7072 275.36384 275.36384 0 0 0-28.02176 1.30048 203.3408 203.3408 0 0 1 11.89888-12.83072c34.85184-34.85184 79.92832-57.58464 130.57536-66.41664-20.64896 28.84096-36.42368 56.86784-47.80544 84.65408z m389.25312 453.77024a201.40032 201.40032 0 0 1-12.83072 11.89888c2.82112-30.2592 0.94208-62.17216-5.41696-94.90944 27.78624-11.29984 55.936-27.19744 84.64896-47.67744-8.69376 50.74944-31.43168 95.8464-66.40128 130.688z m292.60288-536.07424c-1.536 5.5296-3.17952 11.06944-4.94592 16.60416L649.728 129.30048a496.96256 496.96256 0 0 1 16.59904-4.9408c89.25696-24.84224 163.6608-16.00512 204.04224 24.38144 40.38144 40.38144 49.35168 114.76992 24.39168 204.04224z" />
                 <path fill="currentColor" d="M418.36544 607.40096a29.45024 29.45024 0 0 0-41.6768 0l-188.74368 188.73856a29.4912 29.4912 0 0 0-0.00512 41.69216 29.48608 29.48608 0 0 0 41.68704 0l188.73856-188.73856a29.65504 29.65504 0 0 0 0-41.69216z" />
+                <g class="action-icon-shape" fill="currentColor">
+                  <path d="M914.218667 109.994667c-21.333333-21.76-52.906667-29.866667-82.346667-21.333334l-686.506667 198.4a81.664 81.664 0 0 0-59.008 64.426667c-6.058667 31.829333 15.104 72.277333 42.752 89.173333L343.765333 571.733333a55.808 55.808 0 0 0 68.693334-8.106666l245.76-245.845334a31.36 31.36 0 0 1 45.226666 0c12.373333 12.373333 12.373333 32.426667 0 45.226667l-246.186666 245.802667a55.893333 55.893333 0 0 0-8.277334 68.693333l131.157334 215.466667c15.36 25.514667 41.813333 40.106667 70.826666 40.106666 3.413333 0 7.253333 0 10.666667-0.512 33.28-4.224 59.733333-26.88 69.546667-58.88l203.52-681.344c8.96-29.013333 0.853333-60.586667-20.48-82.346666z" />
+                  <path d="M128.426667 717.141333a31.957333 31.957333 0 0 1-22.613334-54.613333l58.24-58.282667a32.085333 32.085333 0 0 1 45.269334 0 32.085333 32.085333 0 0 1 0 45.226667L151.04 707.797333a31.744 31.744 0 0 1-22.613333 9.386667zM288.938667 768a31.957333 31.957333 0 0 1-22.613334-54.613333l58.24-58.282667a32.085333 32.085333 0 0 1 45.226667 0 32.085333 32.085333 0 0 1 0 45.269333L311.594667 758.613333a31.744 31.744 0 0 1-22.613334 9.386667z m10.794666 152.234667c6.229333 6.272 14.421333 9.386667 22.613334 9.386666a31.744 31.744 0 0 0 22.613333-9.386666l58.282667-58.24a32.085333 32.085333 0 0 0 0-45.226667 32.085333 32.085333 0 0 0-45.226667 0l-58.282667 58.24a31.957333 31.957333 0 0 0 0 45.226667z" opacity=".4" />
+                </g>
               </svg>
-              部署
             </button>
             <button
               class="btn tool-btn publish"
               :disabled="isTeamSkill || !store.currentId || store.dirty || publishingMarket"
               :title="store.dirty ? '请先保存后再发布' : '发布到 SKILL 市场'"
+              :aria-label="publishingMarket ? '发布中' : '发布到市场'"
               @click="handlePublishToMarket"
             >
               <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <path fill="currentColor" d="M512 64a448 448 0 1 0 0 896 448 448 0 0 0 0-896z m0 832a384 384 0 1 1 0-768 384 384 0 0 1 0 768z" />
                 <path fill="currentColor" d="M544 480h160a32 32 0 0 1 0 64H544v160a32 32 0 0 1-64 0V544H320a32 32 0 0 1 0-64h160V320a32 32 0 0 1 64 0v160z" />
+                <g class="action-icon-shape" fill="currentColor">
+                  <path d="M594.986667 549.973333a31.146667 31.146667 0 0 0 44.373333 0 31.530667 31.530667 0 0 0 0.426667-44.8l-121.216-122.88a32.725333 32.725333 0 0 0-21.973334-9.386666 32.768 32.768 0 0 0-22.4 9.386666l-120.832 122.88a31.914667 31.914667 0 0 0 0 44.8 31.146667 31.146667 0 0 0 44.373334 0l67.157333-68.266666v206.08a31.445333 31.445333 0 1 0 62.933333 0v-206.08l67.157334 68.266666z m229.674666-164.864c9.941333-0.128 20.736-0.256 30.592-0.256 10.538667 0 19.413333 8.533333 19.413334 19.2v343.04c0 105.813333-85.333333 191.573333-190.08 191.573334H348.714667C238.506667 938.666667 149.333333 848.64 149.333333 737.706667V277.76C149.333333 171.946667 234.24 85.333333 339.84 85.333333h225.578667c10.581333 0 19.456 8.96 19.456 19.626667v137.386667c0 78.08 63.36 142.08 141.098666 142.506666 17.749333 0 33.536 0.128 47.36 0.256 10.88 0.085333 20.565333 0.170667 29.098667 0.170667 5.973333 0 13.824-0.085333 22.229333-0.170667z m11.818667-62.293333c-34.730667 0.128-75.648 0-105.088-0.298667-46.72 0-85.205333-38.869333-85.205333-86.058666V123.989333c0-18.389333 22.058667-27.52 34.688-14.250666l124.416 130.602666 45.696 48.042667a20.352 20.352 0 0 1-14.506667 34.432z" />
+                </g>
               </svg>
-              {{ publishingMarket ? '发布中…' : '发布到市场' }}
             </button>
           </div>
         </div>
@@ -1007,10 +1034,28 @@ onMounted(() => {
 }
 
 .toolbar-right {
+  position: relative;
+  top: 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  justify-content: center;
+  width: 296px;
+  height: 58px;
+  padding: 4px 8px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: #f1f3f5;
+  box-shadow: none;
+  transition: width 0.2s ease-in;
+}
+.toolbar-right:hover,
+.toolbar-right:focus-within {
+  width: 328px;
+}
+.toolbar-right:has(.tool-btn.publish:hover),
+.toolbar-right:has(.tool-btn.publish:focus-visible) {
+  width: 358px;
 }
 
 .btn {
@@ -1029,27 +1074,79 @@ onMounted(() => {
 .btn:hover:not(:disabled) { border-color: #d1d5db; color: #151717; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* 顶部右侧工具按钮：高度统一、宽度随内容自适应 + 图标 + 悬浮抬升/按压动画 */
+/* 顶部右侧工具按钮：菜单式排列，单项触摸后横向展开。 */
 .tool-btn {
-  display: inline-flex;
+  position: relative;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  height: 36px;
-  padding: 0 0.95rem;
-  border-radius: 10px;
-  font-size: 0.88rem;
-  font-weight: 600;
+  flex: 0 0 auto;
+  width: 70px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
   line-height: 1;
+  overflow: hidden;
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
-    box-shadow 0.16s ease, transform 0.1s ease;
+  transform-origin: center left;
+  transition: width 0.2s ease-in, background-color 0.2s ease-in, color 0.2s ease-in;
+}
+.toolbar-right:hover .tool-btn:hover:not(:disabled),
+.toolbar-right:hover .tool-btn.save:hover,
+.toolbar-right .tool-btn:focus-visible {
+  width: 102px;
+  background: #e2e5e9;
+}
+.toolbar-right:hover .tool-btn.publish:hover:not(:disabled),
+.toolbar-right .tool-btn.publish:focus-visible {
+  width: 132px;
+}
+.tool-btn:focus-visible {
+  outline: 2px solid #151717;
+  outline-offset: 2px;
+}
+.tool-btn::before {
+  position: absolute;
+  top: 50%;
+  left: 48px;
+  right: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(100%, -50%);
+  transition: transform 0.2s ease-in, opacity 0.2s ease-in;
+}
+.tool-btn.save::before { content: '保存'; }
+.tool-btn.danger::before { content: '删除'; }
+.tool-btn.deploy::before { content: '部署'; }
+.tool-btn.publish::before {
+  content: '发布到市场';
+  left: 51px;
+  right: 11px;
+  letter-spacing: 0;
+}
+.tool-btn.save::before,
+.tool-btn.danger::before,
+.tool-btn.deploy::before { letter-spacing: 0.18em; }
+.toolbar-right:hover .tool-btn:hover:not(:disabled)::before,
+.toolbar-right:hover .tool-btn.save:hover::before,
+.toolbar-right .tool-btn:focus-visible::before {
+  opacity: 1;
+  transform: translate(0, -50%);
 }
 .tool-btn svg {
-  width: 16px;
-  height: 16px;
+  position: absolute;
+  left: 21px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
   display: block;
+  transition: left 0.2s ease-in, transform 0.2s ease-in;
 }
 .tool-btn svg path {
   stroke: currentColor;
@@ -1058,73 +1155,77 @@ onMounted(() => {
   stroke-linecap: round;
   paint-order: stroke fill;
 }
+.tool-btn svg > path {
+  display: none;
+}
+.tool-btn svg .action-icon-shape path {
+  display: block;
+  stroke: none;
+  paint-order: normal;
+}
 .tool-btn.save svg {
-  width: 14px;
-  height: 14px;
+  width: 28px;
+  height: 28px;
+}
+.toolbar-right:hover .tool-btn.publish:hover:not(:disabled) svg,
+.toolbar-right .tool-btn.publish:focus-visible svg {
+  left: 14px;
 }
 .tool-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(21, 23, 23, 0.1);
+  transform: none;
+  box-shadow: none;
 }
 .tool-btn:active:not(:disabled) {
   transform: translateY(0) scale(0.97);
   box-shadow: none;
 }
 
-.toolbar-divider {
-  width: 2px;
-  height: 24px;
-  background: #cbd5e1;
-  margin: 0 0.75rem;
-  flex-shrink: 0;
-}
-
 .tool-btn.save {
-  background: #0284c7;
-  color: #ffffff;
-  border-color: #0284c7;
+  background: transparent;
+  color: #0284c7;
+  border-color: transparent;
 }
-.tool-btn.save:hover:not(:disabled) {
-  background: #0369a1;
-  border-color: #0369a1;
-  color: #ffffff;
-  box-shadow: 0 6px 14px rgba(2, 132, 199, 0.18);
+.tool-btn.save:hover {
+  background: #dbeefe;
+  border-color: transparent;
+  color: #0284c7;
+  box-shadow: none;
 }
 
 .tool-btn.deploy {
-  background: #16a34a;
-  color: #ffffff;
-  border-color: #16a34a;
+  background: transparent;
+  color: #16a34a;
+  border-color: transparent;
 }
 .tool-btn.deploy:hover:not(:disabled) {
-  background: #15803d;
-  border-color: #15803d;
-  color: #ffffff;
-  box-shadow: 0 6px 14px rgba(22, 163, 74, 0.2);
+  background: #dcfce7;
+  border-color: transparent;
+  color: #16a34a;
+  box-shadow: none;
 }
 
 .tool-btn.publish {
-  background: #4f46e5;
-  color: #ffffff;
-  border-color: #4f46e5;
+  background: transparent;
+  color: #4f46e5;
+  border-color: transparent;
 }
 .tool-btn.publish:hover:not(:disabled) {
-  background: #4338ca;
-  border-color: #4338ca;
-  color: #ffffff;
-  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.2);
+  background: #e8e7ff;
+  border-color: transparent;
+  color: #4f46e5;
+  box-shadow: none;
 }
 
 .tool-btn.danger {
-  background: #dc2626;
-  color: #ffffff;
-  border-color: #dc2626;
+  background: transparent;
+  color: #dc2626;
+  border-color: transparent;
 }
 .tool-btn.danger:hover:not(:disabled) {
-  background: #b91c1c;
-  border-color: #b91c1c;
-  color: #ffffff;
-  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.2);
+  background: #fee2e2;
+  border-color: transparent;
+  color: #dc2626;
+  box-shadow: none;
 }
 
 .deploy-group {
@@ -1436,28 +1537,28 @@ onMounted(() => {
 
 .form-input {
   width: 100%;
-  padding: 0.55rem 0.75rem;
-  background: #ffffff;
-  border: 2px solid #e5e7eb;
+  padding: 0.68rem 0.85rem;
+  background: #eef0f3;
+  border: none;
   border-radius: 8px;
   color: #151717;
   font-size: 0.88rem;
   font-family: inherit;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
   box-sizing: border-box;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: #151717;
   background: #ffffff;
+  box-shadow: inset 0 0 0 2px #151717;
 }
 
 .form-input::placeholder { color: #b6bcc4; }
 
 .form-input.disabled {
   color: #9ca3af;
-  background: #f6f7f8;
+  background: #eef0f3;
   cursor: not-allowed;
 }
 
@@ -1696,6 +1797,25 @@ onMounted(() => {
   .sidebar { width: 100%; min-width: 100%; max-height: 260px; }
   .editor-main { min-height: 60vh; }
   .toolbar { flex-direction: column; align-items: stretch; }
-  .toolbar-right { flex-wrap: wrap; }
+  .toolbar-right { max-width: 100%; flex: none; align-self: flex-end; }
+}
+
+@media (max-width: 360px) {
+  .toolbar-right { width: 100%; height: 58px; padding: 6px; }
+  .toolbar-right:hover,
+  .toolbar-right:focus-within,
+  .toolbar-right:has(.tool-btn.publish:hover),
+  .toolbar-right:has(.tool-btn.publish:focus-visible) { width: 100%; }
+  .tool-btn { width: 50px; height: 42px; }
+  .toolbar-right:hover .tool-btn:hover:not(:disabled),
+  .toolbar-right .tool-btn:focus-visible { width: 100px; }
+  .toolbar-right:hover .tool-btn.publish:hover:not(:disabled),
+  .toolbar-right .tool-btn.publish:focus-visible { width: 118px; }
+  .tool-btn svg,
+  .tool-btn.save svg { left: 11px; width: 28px; height: 28px; }
+  .tool-btn::before { left: 40px; right: 6px; font-size: 12px; }
+  .tool-btn.publish::before { left: 38px; right: 10px; }
+  .toolbar-right:hover .tool-btn.publish:hover:not(:disabled) svg,
+  .toolbar-right .tool-btn.publish:focus-visible svg { left: 5px; }
 }
 </style>

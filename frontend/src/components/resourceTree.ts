@@ -18,27 +18,53 @@ type GlyphType =
   | 'video'
   | 'archive'
 
+const wrapSvg = (label: string, content: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="${label} file icon">
+  ${content}
+</svg>`
+
 const fileSvg = (label: string, main: string, type: GlyphType = 'code') => {
-  const glyphMap: Record<GlyphType, string> = {
-    code: '<path d="M22 38l-6-6 6-6M42 26l6 6-6 6M35 23l-6 18" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>',
-    doc: '<path d="M20 26h24M20 34h24M20 42h16" stroke="white" stroke-width="3.2" stroke-linecap="round" opacity=".9"/>',
-    config: '<path d="M32 22v5M32 37v5M22 32h5M37 32h5M25 25l3.5 3.5M35.5 35.5L39 39M39 25l-3.5 3.5M28.5 35.5L25 39" stroke="white" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="32" r="5" fill="none" stroke="white" stroke-width="3"/>',
-    data: '<ellipse cx="32" cy="25" rx="13" ry="5.5" fill="none" stroke="white" stroke-width="3"/><path d="M19 25v14c0 3 5.8 5.5 13 5.5S45 42 45 39V25M19 32c0 3 5.8 5.5 13 5.5S45 35 45 32" fill="none" stroke="white" stroke-width="3"/>',
-    web: '<circle cx="32" cy="32" r="13" fill="none" stroke="white" stroke-width="3"/><path d="M19 32h26M32 19c4 4.2 6 8.5 6 13s-2 8.8-6 13M32 19c-4 4.2-6 8.5-6 13s2 8.8 6 13" fill="none" stroke="white" stroke-width="2.5"/>',
-    style: '<path d="M22 42c8-1 20-8 20-20 0-3.5-2.5-5-5-3-8 6-16 8-16 17 0 3 1 5 1 6z" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/><circle cx="38" cy="22" r="2" fill="white"/>',
-    image: '<rect x="18" y="22" width="28" height="22" rx="3" fill="none" stroke="white" stroke-width="3"/><circle cx="27" cy="30" r="3" fill="white"/><path d="M20 42l9-9 6 6 4-4 7 7" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>',
-    audio: '<path d="M22 35h6l9 7V22l-9 7h-6v6z" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/><path d="M41 28c2 2 2 6 0 8M45 24c4 4 4 12 0 16" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/>',
-    video: '<rect x="18" y="24" width="22" height="18" rx="3" fill="none" stroke="white" stroke-width="3"/><path d="M40 30l8-5v16l-8-5" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/>',
-    archive: '<path d="M21 24h22v20H21zM25 20h14l4 4H21l4-4z" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/><path d="M32 24v20M29 28h6M29 34h6" stroke="white" stroke-width="2.5" stroke-linecap="round"/>',
+  if (label === 'VUE') {
+    return wrapSvg(
+      label,
+      '<path d="M1.5 3h4.2L12 13.8 18.3 3h4.2L12 21z" fill="#41B883"/><path d="M5.7 3h4L12 7l2.3-4h4L12 13.8z" fill="#35495E"/>',
+    )
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="${label} file icon">
-  <path d="M14 6h26l10 10v42H14z" fill="${main}"/>
-  <path d="M40 6v10h10z" fill="rgba(255,255,255,.36)"/>
-  <rect x="10" y="46" width="44" height="14" rx="4" fill="rgba(0,0,0,.28)"/>
-  ${glyphMap[type]}
-  <text x="32" y="56" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="9" font-weight="700" fill="white">${label}</text>
-</svg>`
+  if (label === 'ENV') {
+    return wrapSvg(
+      label,
+      `<text x="12" y="17.3" text-anchor="middle" font-family="Consolas, monospace" font-size="17" font-weight="700" fill="${main}">$</text>`,
+    )
+  }
+
+  if (label === 'JSON') {
+    return wrapSvg(
+      label,
+      `<text x="12" y="17" text-anchor="middle" font-family="Consolas, monospace" font-size="14" font-weight="700" fill="${main}">{ }</text>`,
+    )
+  }
+
+  if (label === 'HTML') {
+    return wrapSvg(
+      label,
+      `<path d="M9 6L3 12l6 6M15 6l6 6-6 6" fill="none" stroke="${main}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
+    )
+  }
+
+  const glyphMap: Record<GlyphType, string> = {
+    code: `<text x="12" y="17.2" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${label.length > 3 ? 8 : 10.5}" font-weight="800" fill="${main}">${label}</text>`,
+    doc: `<text x="12" y="17.2" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${label.length > 3 ? 8 : 10.5}" font-weight="800" fill="${main}">${label}</text>`,
+    config: `<path d="M13.6 2.5L6.5 13h4.7l-.8 8.5L17.5 11h-4.7z" fill="${main}"/>`,
+    data: `<ellipse cx="12" cy="6.5" rx="7" ry="3" fill="none" stroke="${main}" stroke-width="1.8"/><path d="M5 6.5v10c0 1.7 3.1 3 7 3s7-1.3 7-3v-10M5 11.5c0 1.7 3.1 3 7 3s7-1.3 7-3" fill="none" stroke="${main}" stroke-width="1.8"/>`,
+    web: `<circle cx="12" cy="12" r="8.5" fill="none" stroke="${main}" stroke-width="1.8"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.5 5.2 3.5 8.5S14.3 18.1 12 20.5M12 3.5C9.7 5.9 8.5 8.7 8.5 12s1.2 6.1 3.5 8.5" fill="none" stroke="${main}" stroke-width="1.5"/>`,
+    style: `<path d="M5 19c4.8-.6 13-4.9 13-13 0-2.5-1.8-3.5-3.6-2.1C8.8 8 4.5 9.4 4.5 15.5c0 1.8.5 2.9.5 3.5z" fill="none" stroke="${main}" stroke-width="2" stroke-linejoin="round"/>`,
+    image: `<rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="${main}" stroke-width="1.8"/><circle cx="8.5" cy="9" r="1.7" fill="${main}"/><path d="M5 18l5.2-5.3 3.5 3.4 2.3-2.3 3.5 3.7" fill="none" stroke="${main}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`,
+    audio: `<path d="M5 14h4l6 5V5L9 10H5v4z" fill="none" stroke="${main}" stroke-width="2" stroke-linejoin="round"/><path d="M18 9c1.5 1.6 1.5 4.4 0 6" fill="none" stroke="${main}" stroke-width="2" stroke-linecap="round"/>`,
+    video: `<rect x="3.5" y="6" width="12" height="12" rx="2" fill="none" stroke="${main}" stroke-width="1.8"/><path d="M15.5 10l5-3v10l-5-3" fill="none" stroke="${main}" stroke-width="1.8" stroke-linejoin="round"/>`,
+    archive: `<path d="M6 4h12v16H6zM8 2h8l2 2H6l2-2z" fill="none" stroke="${main}" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 4v16M10.5 7h3M10.5 11h3" stroke="${main}" stroke-width="1.5" stroke-linecap="round"/>`,
+  }
+
+  return wrapSvg(label, glyphMap[type])
 }
 
 const FILE_ICON_SVG_MAP: Record<string, string> = {
@@ -46,9 +72,9 @@ const FILE_ICON_SVG_MAP: Record<string, string> = {
   py: fileSvg('PY', '#3776AB', 'code'),
   ipynb: fileSvg('NB', '#F37626', 'code'),
 
-  js: fileSvg('JS', '#F7DF1E', 'code'),
-  cjs: fileSvg('CJS', '#F7DF1E', 'code'),
-  mjs: fileSvg('MJS', '#F7DF1E', 'code'),
+  js: fileSvg('JS', '#C79200', 'code'),
+  cjs: fileSvg('CJS', '#C79200', 'code'),
+  mjs: fileSvg('MJS', '#C79200', 'code'),
   jsx: fileSvg('JSX', '#61DAFB', 'code'),
 
   ts: fileSvg('TS', '#3178C6', 'code'),
@@ -93,7 +119,7 @@ const FILE_ICON_SVG_MAP: Record<string, string> = {
   yml: fileSvg('YML', '#CB171E', 'config'),
   toml: fileSvg('TOML', '#9C4221', 'config'),
   ini: fileSvg('INI', '#64748B', 'config'),
-  env: fileSvg('ENV', '#ECD53F', 'config'),
+  env: fileSvg('ENV', '#78A641', 'config'),
   xml: fileSvg('XML', '#E34F26', 'data'),
   csv: fileSvg('CSV', '#217346', 'data'),
 
@@ -134,14 +160,21 @@ const SPECIAL_FILE_ICON_SVG: Record<string, string> = {
   dockerfile: fileSvg('DOCK', '#2496ED', 'config'),
   license: fileSvg('LIC', '#6B7280', 'doc'),
   lock: fileSvg('LOCK', '#A16207', 'archive'),
+  package: fileSvg('JSON', '#C7B900', 'data'),
+  tsconfig: fileSvg('TS', '#3178C6', 'code'),
+  vite: fileSvg('VITE', '#D6B600', 'config'),
 }
 
 /** 由文件名（含扩展名）返回类型图标的 SVG 字符串。 */
 function fileIconSvg(name: string): string {
   const lower = (name || '').toLowerCase()
+  if (lower === 'package.json' || lower === 'package-lock.json') return SPECIAL_FILE_ICON_SVG.package
+  if (lower === 'tsconfig.json' || lower.startsWith('tsconfig.')) return SPECIAL_FILE_ICON_SVG.tsconfig
+  if (lower === 'vite.config.ts' || lower === 'vite.config.js') return SPECIAL_FILE_ICON_SVG.vite
+  if (lower === '.env' || lower.startsWith('.env.')) return FILE_ICON_SVG_MAP.env
   if (lower === 'dockerfile' || lower.endsWith('.dockerfile')) return SPECIAL_FILE_ICON_SVG.dockerfile
   if (lower === 'license' || lower === 'license.txt') return SPECIAL_FILE_ICON_SVG.license
-  if (lower.endsWith('.lock') || lower === 'package-lock.json' || lower === 'yarn.lock') return SPECIAL_FILE_ICON_SVG.lock
+  if (lower.endsWith('.lock') || lower === 'yarn.lock') return SPECIAL_FILE_ICON_SVG.lock
   const dot = lower.lastIndexOf('.')
   const ext = dot >= 0 ? lower.slice(dot + 1) : ''
   return FILE_ICON_SVG_MAP[ext] || DEFAULT_FILE_ICON_SVG

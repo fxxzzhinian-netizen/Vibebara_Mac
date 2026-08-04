@@ -81,8 +81,8 @@ curl http://localhost:8000/health       # {"status":"healthy",...}
 ### 2. 本机：启动桌面壳（PowerShell，连云端后端）
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
 .\build-desktop.ps1 -Quick -NoBe
 ```
 
@@ -245,8 +245,8 @@ docker compose build --build-arg APT_MIRROR=mirrors.aliyun.com backend
 云端后端已在服务器部署后，开发者本机只需指定服务器地址：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
 .\build-desktop.ps1 -NoBe     # 不启动本地后端，直连云端
 ```
 
@@ -319,8 +319,8 @@ cd ..
 - **环境变量**（联调优先级最高）：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
 $env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 ```
 
@@ -328,8 +328,8 @@ $env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 
 ```json
 {
-  "cloudApiBase": "http://43.136.128.162:8000/api/v1",
-  "cloudWsBase": "ws://43.136.128.162:8000",
+  "cloudApiBase": "http://162.14.106.190:8000/api/v1",
+  "cloudWsBase": "ws://162.14.106.190:8000",
   "updateUrl": "https://你的更新域名/desktop/"
 }
 ```

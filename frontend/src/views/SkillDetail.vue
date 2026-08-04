@@ -1593,20 +1593,24 @@ function timeAgo(ts: string | null | undefined): string {
 
 .form-input {
   width: 100%;
-  padding: 0.55rem 0.75rem;
-  background: #ffffff;
-  border: 2px solid #e5e7eb;
+  padding: 0.68rem 0.85rem;
+  background: #eef0f3;
+  border: none;
   border-radius: 8px;
   color: #151717;
   font-size: 0.88rem;
   font-family: inherit;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
   box-sizing: border-box;
 }
-.form-input:focus { outline: none; border-color: #151717; background: #ffffff; }
+.form-input:focus {
+  outline: none;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2px #151717;
+}
 .form-input::placeholder { color: #b6bcc4; }
-.form-input:disabled { color: #374151; background: #f6f7f8; cursor: default; }
-.form-input.disabled { color: #9ca3af; background: #f6f7f8; cursor: not-allowed; }
+.form-input:disabled { color: #374151; background: #eef0f3; cursor: default; }
+.form-input.disabled { color: #9ca3af; background: #eef0f3; cursor: not-allowed; }
 .form-input.textarea { resize: vertical; min-height: 80px; }
 .instructions-editor { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.82rem; line-height: 1.6; min-height: 400px; }
 .code-area { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; }

@@ -259,7 +259,7 @@ GitLab 项目 → Settings → CI/CD → Variables
 `DEPLOY_HOST`
 
 - 值：生产服务器 IP 或域名；
-- 当前测试服务器可填写 `43.136.128.162`；
+- 当前生产服务器填写 `162.14.106.190`；
 - 设置为 Protected；
 - Environment scope 设置为 `production` 或 All。
 
@@ -286,7 +286,7 @@ GitLab 项目 → Settings → CI/CD → Variables
 从可信运维终端获取候选内容：
 
 ```bash
-ssh-keyscan -p 22 -H 43.136.128.162
+ssh-keyscan -p 22 -H 162.14.106.190
 ```
 
 必须与服务器本机显示的指纹进行核对：
