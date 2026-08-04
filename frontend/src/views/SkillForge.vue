@@ -433,7 +433,7 @@ onMounted(() => {
             @enter-cancelled="paneTransitionEnd"
           >
           <!-- Basic (intersection: common across all platforms) -->
-          <section v-if="activeTab === 'basic'" key="basic" class="form-section full-width">
+          <section v-if="activeTab === 'basic'" key="basic" class="form-section full-width basic-fill">
             <div class="content-card">
               <h3 class="card-title">通用信息</h3>
               <div class="form-row">
@@ -443,12 +443,12 @@ onMounted(() => {
                 </label>
                 <input :value="cfg.name" disabled class="form-input disabled" />
               </div>
-              <div class="form-row">
+              <div class="form-row description-fill">
                 <label class="label-with-tip">
                   描述
                   <HelpTip text="说明 Skill 做什么、何时使用；所有平台共用。" :size="14" />
                 </label>
-                <textarea :value="cfg.description" @input="setField('description', ($event.target as HTMLTextAreaElement).value)" class="form-input textarea" rows="5" placeholder="简要描述 Skill 的用途"></textarea>
+                <textarea :value="cfg.description" @input="setField('description', ($event.target as HTMLTextAreaElement).value)" class="form-input textarea" rows="8" placeholder="简要描述 Skill 的用途"></textarea>
               </div>
               <div class="meta-inline">
                 <span class="meta-item">
@@ -1218,7 +1218,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  background: #ffffff;
+  background: #eef0f3;
   border: 1px solid #ebedf0;
   border-radius: 14px;
   padding: 0.5rem;
@@ -1260,7 +1260,7 @@ onMounted(() => {
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.tab-side-item:hover:not(.active) { background: #f6f7f8; color: #151717; }
+.tab-side-item:hover:not(.active) { background: #e3e6eb; color: #151717; }
 
 /* 选中项：文字转白加粗；黑色底由 .tab-slider 提供（可滑动） */
 .tab-side-item.active {
@@ -1279,10 +1279,14 @@ onMounted(() => {
 /* 正文滑动容器：切换标签时新旧面板同处一格叠放，沿纵向滑入滑出。 */
 .tab-pane-group {
   display: grid;
+  min-height: 100%;
 }
 .tab-pane-group > * {
   grid-area: 1 / 1;
   align-self: start;
+}
+.tab-pane-group > .basic-fill {
+  align-self: stretch;
 }
 /* 仅在切换动画期间裁剪，避免纵向位移溢出滚动区。 */
 .tab-pane-group.animating {
@@ -1326,6 +1330,21 @@ onMounted(() => {
   border-radius: 0;
   padding: 0;
   min-width: 0;
+}
+.basic-fill .content-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.description-fill {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+.description-fill .textarea {
+  flex: 1;
+  min-height: 160px;
 }
 
 .card-title {

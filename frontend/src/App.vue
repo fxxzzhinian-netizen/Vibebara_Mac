@@ -29,9 +29,9 @@ import AppToast from '@/components/AppToast.vue'
   --primary: #6366f1;
   --primary-hover: #4f46e5;
   --bg: #ffffff;
-  /* 全局画布背景：使用 bg.png 铺满视口并固定 */
-  --canvas-color: #f3f4f6;
-  --canvas: url('./img/bg.png') center center / cover no-repeat fixed, var(--canvas-color);
+  /* 工作区统一使用与引导页一致的纯白画布 */
+  --canvas-color: #ffffff;
+  --canvas: var(--canvas-color);
   --surface: #f6f7f8;
   --surface-hover: #eef0f2;
   --border: #e5e7eb;
@@ -55,6 +55,9 @@ body {
   background: var(--canvas);
   color: var(--text);
   min-height: 100vh;
+  /* 仅在视口滚动条出现时增加等宽左内边距，使内容仍以完整视口为中心；
+     短页面不预留右侧滚动条槽位，因此不会出现固定留白。 */
+  padding-left: calc(100vw - 100%);
 }
 
 /* ===== 全局滚动条样式 ===== */
