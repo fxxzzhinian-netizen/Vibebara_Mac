@@ -9,11 +9,11 @@
 - `STORAGE_BACKEND=local`（默认）：`LocalObjectStore`，键映射到本地文件系统（保留现有开发体验）。
 - `STORAGE_BACKEND=cos`（生产）：`CosObjectStore`，用 `cos-python-sdk-v5` 读写 COS。
 
-桶：`vibebara-1327732770`（AppId 1327732770）、region `ap-chengdu`。
+生产桶：`vibebara-prod-1327732770`（AppId 1327732770）、region `ap-chengdu`。
 
 ## 2. 安全提醒（重要）
 
-桶当前为「公有读写」=任何人凭对象 URL 即可读 / 改 / 删 skill 内容，属高风险。本方案用 **SDK + SecretId/SecretKey** 访问，不依赖公共 ACL；**强烈建议尽快把桶收紧为私有**（仅密钥访问），代码无需任何改动。密钥务必只经环境变量注入，不入库、不入前端、不进 git。
+生产桶采用私有读写。本方案用 **SDK + SecretId/SecretKey** 访问，不依赖公共 ACL；密钥务必只经环境变量注入，不入库、不入前端、不进 git。
 
 ## 3. ObjectStore 抽象
 
@@ -23,7 +23,7 @@ graph TD
   iface["ObjectStore 接口"]
   localimpl["LocalObjectStore<br/>root = COWORK_DATA_DIR"]
   cosimpl["CosObjectStore<br/>cos-python-sdk-v5"]
-  cos["COS 桶 vibebara-1327732770 (ap-chengdu)"]
+  cos["COS 桶 vibebara-prod-1327732770 (ap-chengdu)"]
   consumers --> iface
   iface --> localimpl
   iface --> cosimpl
@@ -88,7 +88,7 @@ class ObjectStore:
 
 ```env
 STORAGE_BACKEND=cos
-COS_BUCKET=vibebara-1327732770
+COS_BUCKET=vibebara-prod-1327732770
 COS_REGION=ap-chengdu
 COS_SECRET_ID=你的SecretId
 COS_SECRET_KEY=你的SecretKey

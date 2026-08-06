@@ -64,7 +64,7 @@ services:
       # 凭证非 compose 级强制：STORAGE_BACKEND=cos 时由后端 CosObjectStore 启动校验
       # 并给出清晰报错；STORAGE_BACKEND=local 时无需 COS 凭证即可启动。
       STORAGE_BACKEND: ${STORAGE_BACKEND:-cos}
-      COS_BUCKET: ${COS_BUCKET:-vibebara-1327732770}
+      COS_BUCKET: ${COS_BUCKET:-vibebara-prod-1327732770}
       COS_REGION: ${COS_REGION:-ap-chengdu}
       COS_SECRET_ID: ${COS_SECRET_ID:-}
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
