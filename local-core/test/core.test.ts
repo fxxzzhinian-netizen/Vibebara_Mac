@@ -5,8 +5,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   computeDirHash,
+  ensureVibebaraGuide,
   LocalCoreError,
   readFolder,
+  VIBEBARA_GUIDE_START,
   writeSkill,
 } from "../src";
 
@@ -109,6 +111,23 @@ describe("shared read/write semantics", () => {
     expect(
       fs.readFileSync(path.join(result.installPath, "assets", "icon.bin")),
     ).toEqual(binary);
+    expect(
+      fs.readFileSync(path.join(project, "vibebara.md"), "utf8"),
+    ).toContain("vibebara merge <skill-name> --preview");
+  });
+
+  it("preserves existing vibebara.md content and maintains one command block", () => {
+    const project = path.join(tempRoot, "project-guide");
+    fs.mkdirSync(project);
+    fs.writeFileSync(path.join(project, "vibebara.md"), "# 团队说明\n", "utf8");
+
+    ensureVibebaraGuide(project);
+    ensureVibebaraGuide(project);
+
+    const guide = fs.readFileSync(path.join(project, "vibebara.md"), "utf8");
+    expect(guide.startsWith("# 团队说明\n")).toBe(true);
+    expect(guide).toContain("vibebara pull <skill-name>");
+    expect(guide.match(new RegExp(VIBEBARA_GUIDE_START, "g"))).toHaveLength(1);
   });
 
   it("rejects path traversal", () => {
