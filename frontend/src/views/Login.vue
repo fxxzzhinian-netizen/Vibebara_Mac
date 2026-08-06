@@ -6,7 +6,6 @@ import { toast } from '@/composables/useToast'
 import SliderCaptcha from '@/components/SliderCaptcha.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import logoUrl from '@/img/logo.png'
-import loginBg from '@/img/login_bg.png'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -89,7 +88,7 @@ async function doSubmit() {
 </script>
 
 <template>
-  <div class="login-page" :style="{ backgroundImage: `url(${loginBg})` }">
+  <div class="login-page">
     <img class="page-logo" :src="logoUrl" alt="vibebara" draggable="false" />
 
     <form class="form" @submit.prevent="handleSubmit">
@@ -258,9 +257,6 @@ async function doSubmit() {
   align-items: center;
   justify-content: center;
   background-color: #ffffff;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
   padding: 24px;
   box-sizing: border-box;
 }
