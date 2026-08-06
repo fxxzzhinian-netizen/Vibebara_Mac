@@ -112,6 +112,11 @@ describe("handleWriteSkill", () => {
     expect(gi).toContain(".cursor/skills/");
     expect(gi).toContain(".codex/skills/");
     expect(gi).toContain(".windsurf/skills/");
+    const guide = fs.readFileSync(path.join(deployPath, "vibebara.md"), "utf8");
+    expect(guide).toContain("vibebara status");
+    expect(guide).toContain("vibebara pull <skill-name>");
+    expect(guide).toContain("vibebara push <skill-name>");
+    expect(guide).toContain("vibebara merge <skill-name> --preview");
   });
 
   it("Windsurf 项目部署：落盘到 .windsurf/skills/{id}", () => {

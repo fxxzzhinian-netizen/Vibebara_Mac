@@ -43,6 +43,64 @@ GITIGNORE_BLOCK = [
     ".qoder/skills/",
     ".workbuddy/skills/",
 ]
+VIBEBARA_GUIDE_FILENAME = "vibebara.md"
+VIBEBARA_GUIDE_START = "<!-- vibebara:commands:start -->"
+VIBEBARA_GUIDE_END = "<!-- vibebara:commands:end -->"
+VIBEBARA_GUIDE_BLOCK = f"""{VIBEBARA_GUIDE_START}
+# Vibebara Skill 协作指南
+
+此项目的 Skill 由 Vibebara 管理。请在项目根目录打开终端并执行以下命令。
+
+## 查看部署状态
+
+```bash
+vibebara status
+```
+
+## 拉取团队最新 Skill
+
+```bash
+vibebara pull <skill-name>
+```
+
+如果需要覆盖尚未推送的本地改动：
+
+```bash
+vibebara pull <skill-name> --overwrite
+```
+
+## 推送本地改动
+
+```bash
+vibebara push <skill-name>
+```
+
+创建版本时可使用：
+
+```bash
+vibebara push <skill-name> --create-version --version-number 1.2 --version-label "版本说明"
+```
+
+## 合并冲突
+
+先预览 AI 三方合并结果：
+
+```bash
+vibebara merge <skill-name> --preview
+```
+
+确认后执行合并：
+
+```bash
+vibebara merge <skill-name>
+```
+
+当项目中存在多个同名部署时，可增加 `--project <project-id>` 或
+`--deployment <deployment-id>` 精确指定。使用 `vibebara <command> --help`
+查看完整参数。
+
+{VIBEBARA_GUIDE_END}
+"""
 
 
 def _project_to_dict(
@@ -140,6 +198,39 @@ def _ensure_gitignore(project_root: str) -> None:
     block = "\n".join(missing)
     suffix = "\n" if not block.endswith("\n") else ""
     gitignore.write_text(f"{existing}{prefix}{block}{suffix}", encoding="utf-8")
+
+
+def _ensure_vibebara_guide(project_root: str) -> None:
+    """写入命令行协作指南；保留用户内容，仅维护 Vibebara 标记区块。"""
+    root = Path(project_root)
+    root.mkdir(parents=True, exist_ok=True)
+    guide_path = root / VIBEBARA_GUIDE_FILENAME
+    existing = guide_path.read_text(encoding="utf-8") if guide_path.exists() else ""
+
+    start = existing.find(VIBEBARA_GUIDE_START)
+    end = existing.find(VIBEBARA_GUIDE_END, start)
+    if start >= 0 and end >= start:
+        suffix_start = end + len(VIBEBARA_GUIDE_END)
+        updated = (
+            existing[:start]
+            + VIBEBARA_GUIDE_BLOCK.rstrip()
+            + existing[suffix_start:]
+        )
+        if not updated.endswith("\n"):
+            updated += "\n"
+    else:
+        if not existing:
+            separator = ""
+        elif existing.endswith("\n\n"):
+            separator = ""
+        elif existing.endswith("\n"):
+            separator = "\n"
+        else:
+            separator = "\n\n"
+        updated = f"{existing}{separator}{VIBEBARA_GUIDE_BLOCK}"
+
+    if updated != existing:
+        guide_path.write_text(updated, encoding="utf-8")
 
 
 def _deployment_to_dict(row: Optional[UserSkillDeployment]) -> Optional[Dict[str, Any]]:
@@ -634,6 +725,7 @@ async def deploy_project_skill(
         return result
 
     _ensure_gitignore(deploy_path)
+    _ensure_vibebara_guide(deploy_path)
 
     installed_hash = _compute_content_hash(str(install_path))
     now = datetime.now(timezone.utc)

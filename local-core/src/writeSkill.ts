@@ -5,6 +5,7 @@ import { writeContent } from "./fileio";
 import { ensureGitignore } from "./gitignore";
 import { computeDirHash } from "./hash";
 import { platformSkillsDir } from "./platform";
+import { ensureVibebaraGuide } from "./projectGuide";
 import { isInside, safeJoinUnder, WritableRoots } from "./security";
 import type { ToolType, WriteSkillOptions, WriteSkillResult } from "./types";
 
@@ -147,6 +148,7 @@ export function writeSkill(
 
     if (input.scope === "project" && input.ensureGitignore && input.deployPath) {
       ensureGitignore(input.deployPath);
+      ensureVibebaraGuide(input.deployPath);
     }
   } catch (error) {
     if (error instanceof LocalCoreError) throw error;

@@ -3,6 +3,7 @@ export * from "./fileio";
 export * from "./gitignore";
 export * from "./hash";
 export * from "./platform";
+export * from "./projectGuide";
 export * from "./readFolder";
 export * from "./security";
 export * from "./types";
