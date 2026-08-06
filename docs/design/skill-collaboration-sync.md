@@ -11,7 +11,7 @@
 
 | 层级 | 定义 | 数据条件 | 是否同步源 |
 |------|------|----------|------------|
-| 个人 Skill 仓库 | 当前登录用户私有的 Skill 草稿区 | `skill_packages.scope='personal' AND owner_id=当前用户` | 否，仅个人可复用素材 |
+| 个人 Skill 仓库 | 当前登录用户私有的 Skill 草稿区 | `personal_skills.owner_id=当前用户` | 否，仅个人可复用素材 |
 | 团队 Skill 仓库 | 团队共享的 Skill 基线 | `scope='team' AND team_id ∈ 用户所属团队` | 是，团队分发与推送/拉取的事实源 |
 | 项目 Skill 列表 | 项目声明可用哪些团队 Skill，不含本地路径/工具 | `project_skills(project_id, skill_id)` | 否 |
 | 用户部署实例 | 某用户把项目 Skill 部署到本机后的真实运行副本 | `user_skill_deployments`（per-user） | 是，监听其变化并经推送回写团队仓库 |
@@ -41,11 +41,12 @@
 
 **`skill_packages`**（个人 + 团队仓库共用一张表，靠 `scope` 区分）
 - `scope`：`personal` / `team`
-- `owner_id`：个人仓库归属用户
+- `owner_id`：个人仓库归属用户（必填）
+- `id` / `name`：个人 Skill 的内部 UUID / 自然名；`(owner_id, name)` 用户内唯一
 - `team_id`：团队仓库归属团队
 - `source_skill_id`：溯源（个人→团队复制时指向原个人 Skill）
 - `version` / `content_hash`：仓库版本与抽象包内容 hash
-- `store_path`：物理路径（personal/team 共用同一 `SKILL_STORE_DIR`，仅靠 DB+API 隔离）
+- `store_path`：对象存储前缀；个人 Skill 使用 `skills/personal/{owner_id}/{id}`，团队 Skill 使用 `skills/team/{id}`
 
 **`user_skill_deployments`**（部署实例，per-user）
 - `user_id` / `project_id` / `team_skill_id` / `skill_name`
@@ -82,7 +83,7 @@
 ### 4.1 个人 → 团队（复制 + 溯源）
 - 入口：个人 Skill 仓库（`SkillForge.vue`）每个 Skill 的「放入团队」按钮 → 选目标团队。
 - 后端：`NativeSkillStore.copy_to_team(skill_id, team_id, user_id)`
-  - 校验源为本人个人 Skill；复制 store 目录到**新 id**（`{skill_id}-team-{team_id前8位}`，避免主键/目录冲突）。
+  - 校验源为本人个人 Skill；以个人 Skill 的自然名生成团队代理键并复制到团队对象前缀，避免把个人 UUID 暴露为安装目录名。
   - 新副本 `scope=team` + `team_id` + `source_skill_id=原个人 id`；`owner_id=None`（团队共享）。
   - 保留原 `display_name` 作为友好名；个人仓库**保留原件**。
 - 接口：`POST /api/v1/teams/{team_id}/skills/from-personal/{skill_id}`（团队成员校验）。

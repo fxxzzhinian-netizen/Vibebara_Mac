@@ -2,7 +2,7 @@
 SkillVersionService — 团队 Skill 的「版本快照」服务（创建 / 列表 / 查看 / 回滚）。
 
 与 `skill_change_log`（每次推送都自动记一条审计流）的区别：
-  - 版本是用户**显式选择**"更新版本序列号"时才落的一条**完整内容快照**；
+  - 版本是用户**显式选择**"更新版本号"时才落的一条**完整内容快照**；
   - 快照含完整 config + SKILL 正文，可在 Skill 详情页查看历史与一键回滚。
 
 所有 Skill 内容读写仍由 NativeSkillStore 负责，本服务只管版本快照与回滚编排。
@@ -13,10 +13,12 @@ import difflib
 import hashlib
 import json
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.database import async_session_factory
@@ -31,6 +33,7 @@ _RESOURCE_DIRS = ("scripts", "references", "assets")
 # 查看版本快照资源文件内容时的体积/差异上限，避免一次性回传巨大文本。
 _RESOURCE_CONTENT_MAX_BYTES = 512 * 1024
 _RESOURCE_DIFF_MAX_LINES = 600
+_VERSION_NUMBER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
 def _version_prefix(skill_id: str, version_id: str) -> str:
@@ -86,6 +89,83 @@ class SkillVersionService:
         )
         return int(current or 0) + 1
 
+    @staticmethod
+    def validate_version_number(value: str) -> str:
+        """校验并规范化用户可见版本号；版本号必须是 x.y，且按字符串保存。"""
+        normalized = (value or "").strip()
+        if not _VERSION_NUMBER_RE.fullmatch(normalized):
+            raise ValueError("版本号格式不正确，请输入 x.y，例如 1.1")
+        return normalized
+
+    @classmethod
+    def increment_version_number(cls, value: str) -> str:
+        """次版本加 1；按整数分段处理，确保 1.9 正确得到 1.10。"""
+        normalized = cls.validate_version_number(value)
+        major, minor = (int(part) for part in normalized.split(".", 1))
+        return f"{major}.{minor + 1}"
+
+    @classmethod
+    async def _next_version_number(cls, session, skill_id: str) -> str:
+        latest = (
+            await session.execute(
+                select(SkillVersion)
+                .where(SkillVersion.skill_id == skill_id)
+                .order_by(SkillVersion.seq.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if latest is None:
+            return "1.1"
+        current = getattr(latest, "version_number", "") or f"1.{latest.seq}"
+        return cls.increment_version_number(current)
+
+    @classmethod
+    async def suggest_next_version_number(cls, skill_id: str) -> str:
+        """返回下一默认展示版本号，供保存/推送界面预填。"""
+        async with async_session_factory() as session:
+            return await cls._next_version_number(session, skill_id)
+
+    @classmethod
+    async def resolve_version_number(
+        cls,
+        skill_id: str,
+        requested: str = "",
+    ) -> str:
+        """在内容写入前解析并校验版本号，避免格式/重复错误发生在保存之后。"""
+        async with async_session_factory() as session:
+            return await cls._resolve_version_number(session, skill_id, requested)
+
+    @classmethod
+    async def _resolve_version_number(
+        cls,
+        session,
+        skill_id: str,
+        requested: str,
+    ) -> str:
+        if (requested or "").strip():
+            version_number = cls.validate_version_number(requested)
+            existing = await session.scalar(
+                select(SkillVersion.id).where(
+                    SkillVersion.skill_id == skill_id,
+                    SkillVersion.version_number == version_number,
+                )
+            )
+            if existing:
+                raise ValueError(
+                    f"版本号 v{version_number} 已存在，请使用其他版本号"
+                )
+            return version_number
+
+        version_number = await cls._next_version_number(session, skill_id)
+        while await session.scalar(
+            select(SkillVersion.id).where(
+                SkillVersion.skill_id == skill_id,
+                SkillVersion.version_number == version_number,
+            )
+        ):
+            version_number = cls.increment_version_number(version_number)
+        return version_number
+
     @classmethod
     async def create_version(
         cls,
@@ -93,13 +173,15 @@ class SkillVersionService:
         *,
         created_by: str,
         source: str = "push",
+        version_number: str = "",
         label: str = "",
         change_summary: str = "",
         change_items: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[Dict[str, Any]]:
         """对当前 Skill 内容打一个版本快照（完整 config + SKILL 正文）。
 
-        seq 在该 skill 维度单调递增（v1/v2/v3…）。Skill 不存在时返回 None
+        seq 在该 skill 维度单调递增并仅用于内部排序；version_number 是用户可见的
+        x.y 版本号。Skill 不存在时返回 None
         （不抛错，避免阻断推送/保存主流程）。
         """
         from app.services.native_skill_store import NativeSkillStore
@@ -133,11 +215,17 @@ class SkillVersionService:
 
         async with async_session_factory() as session:
             seq = await cls._next_seq(session, skill_id)
+            resolved_version_number = await cls._resolve_version_number(
+                session,
+                skill_id,
+                version_number,
+            )
             row = SkillVersion(
                 id=version_id,
                 skill_id=skill_id,
                 team_id=team_id,
                 seq=seq,
+                version_number=resolved_version_number,
                 label=label or "",
                 content_hash=content_hash,
                 config_json=json.dumps(config, ensure_ascii=False),
@@ -149,12 +237,23 @@ class SkillVersionService:
                 created_by=created_by or "",
             )
             session.add(row)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                from app.services.object_store import get_object_store
+
+                get_object_store().delete_prefix(
+                    _version_prefix(skill_id, version_id)
+                )
+                raise ValueError(
+                    f"版本号 v{resolved_version_number} 已存在，请使用其他版本号"
+                ) from exc
             await session.refresh(row)
             names = await cls._display_names([row.created_by])
             result = cls._row_to_dict(row, include_content=False, name_map=names)
         logger.info(
-            f"[SkillVersion] skill='{skill_id}' 建版本 v{seq} "
+            f"[SkillVersion] skill='{skill_id}' 建版本 v{resolved_version_number} "
             f"(source={source}, 资源 {len(resources_manifest)} 个)"
         )
         return result
@@ -261,6 +360,14 @@ class SkillVersionService:
             ).scalars().first()
             prev_id = prev.id if prev else None
             prev_seq = prev.seq if prev else None
+            cur_version_number = (
+                getattr(ver, "version_number", "") or f"1.{ver.seq}"
+            )
+            prev_version_number = (
+                (getattr(prev, "version_number", "") or f"1.{prev.seq}")
+                if prev
+                else None
+            )
 
         store = get_object_store()
 
@@ -302,8 +409,10 @@ class SkillVersionService:
             "path": safe,
             "change": change,
             "seq": cur_seq,
+            "version_number": cur_version_number,
             "prev_version_id": prev_id,
             "prev_seq": prev_seq,
+            "prev_version_number": prev_version_number,
             "new": new_side,
             "old": old_side,
             "diff": diff,
@@ -381,7 +490,9 @@ class SkillVersionService:
             store_prefix = pkg.store_path
             team_id = pkg.team_id
             team_name = pkg.name
-            from_seq = ver.seq
+            from_version_number = (
+                getattr(ver, "version_number", "") or f"1.{ver.seq}"
+            )
             snapshot_config = json.loads(ver.config_json or "{}")
             snapshot_vibeh = ver.vibeh_content or ""
 
@@ -422,9 +533,9 @@ class SkillVersionService:
         change_items = diff_abstract_packages(base_pkg, cur_pkg)
         diff_summary = summarize_changes(change_items)
         if diff_summary == "无改动":
-            diff_summary = f"回滚到版本 v{from_seq}（内容一致）"
+            diff_summary = f"回滚到版本 v{from_version_number}（内容一致）"
         else:
-            diff_summary = f"回滚到版本 v{from_seq}：{diff_summary}"
+            diff_summary = f"回滚到版本 v{from_version_number}：{diff_summary}"
 
         await SkillSyncService.on_skill_changed(
             skill_id=skill_id,
@@ -441,7 +552,7 @@ class SkillVersionService:
             skill_id,
             created_by=user_id,
             source="restore",
-            label=f"回滚自 v{from_seq}",
+            label=f"回滚自 v{from_version_number}",
             change_summary=diff_summary,
             change_items=change_items,
         )
@@ -499,6 +610,9 @@ class SkillVersionService:
             "skill_id": row.skill_id,
             "team_id": row.team_id,
             "seq": row.seq,
+            "version_number": (
+                getattr(row, "version_number", "") or f"1.{row.seq}"
+            ),
             "label": row.label or "",
             "content_hash": row.content_hash or "",
             "change_summary": row.change_summary or "",

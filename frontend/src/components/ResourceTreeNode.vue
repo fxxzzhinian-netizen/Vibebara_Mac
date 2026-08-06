@@ -70,9 +70,10 @@ function onClick() {
 
 .rt-icon { flex-shrink: 0; font-size: 0.92rem; }
 .rt-icon-svg {
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 1.8rem;
+  height: 1.8rem;
   display: block;
+  align-self: center;
   object-fit: contain;
 }
 
@@ -82,5 +83,6 @@ function onClick() {
   white-space: nowrap;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.85rem;
+  line-height: 1.3rem;
 }
 </style>

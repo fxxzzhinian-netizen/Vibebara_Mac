@@ -16,7 +16,7 @@ import type {
  * 命令解析口径与 launcher.py 一致：
  *   · cursor   : which(cursor.cmd/cursor) → 后台静默启动；
  *   · codex-cli: which(codex.cmd/codex)   → 新终端窗口启动（交互式）；
- *   · codex-app: which(codex-app.cmd/codex-app/Codex.exe) 或 AppX(Get-StartApps) → 后台启动；
+ *   · codex-app: 检测新版 ChatGPT（已合并 Codex）并兼容旧 Codex App → 后台启动；
  *   · windsurf : which(windsurf.cmd/windsurf/Windsurf.exe) 或 AppX(Get-StartApps) → 后台启动。
  */
 
@@ -39,7 +39,7 @@ const SUPPORTED_TOOLS: LauncherToolId[] = [
 const TOOL_LABELS: Record<LauncherToolId, string> = {
   cursor: "Cursor",
   "codex-cli": "Codex CLI",
-  "codex-app": "Codex App",
+  "codex-app": "ChatGPT (Codex)",
   windsurf: "Windsurf",
   "claude-code": "Claude Code",
   "claude-app": "Claude",
@@ -149,15 +149,24 @@ function resolveCommand(tool: LauncherToolId): ResolvedCommand {
 
   if (tool === "codex-app") {
     if (IS_WINDOWS) {
-      const exe = which("codex-app.cmd", "codex-app", "Codex.exe");
+      // 新版 Codex 已合并进 ChatGPT 客户端；优先识别 ChatGPT，同时兼容旧 Codex App。
+      const exe = which(
+        "ChatGPT.exe",
+        "chatgpt.exe",
+        "codex-app.cmd",
+        "codex-app",
+        "Codex.exe",
+      );
       if (exe) return exeCmd(exe);
-      const appx = findAppxApp("Codex");
+      const appx =
+        findAppxApp("*ChatGPT*") ??
+        findAppxApp("*Codex*");
       if (appx) return appxCmd(appx);
     } else {
-      const exe = which("codex-app", "Codex");
+      const exe = which("chatgpt", "ChatGPT", "codex-app", "Codex");
       if (exe) return exeCmd(exe);
     }
-    throw new Error("Codex App 未找到，请确认 Codex 桌面应用已安装");
+    throw new Error("ChatGPT 客户端未找到，请确认已安装包含 Codex 的新版 ChatGPT 客户端");
   }
 
   if (tool === "windsurf") {
@@ -342,7 +351,7 @@ export function listTools(): { tools: LauncherToolInfo[] } {
       description = "在终端中启动 Codex CLI 交互式对话";
     } else if (id === "codex-app") {
       mode = "app";
-      description = "启动 Codex 桌面应用";
+      description = "启动包含 Codex 的 ChatGPT 桌面应用";
     } else if (id === "windsurf") {
       mode = "app";
       description = "启动 Windsurf IDE";

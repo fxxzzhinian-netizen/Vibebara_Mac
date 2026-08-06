@@ -95,6 +95,7 @@ export interface PushDeploymentRequest {
   currentHash: string
   files: FilePayload[]
   createVersion?: boolean
+  versionNumber?: string
   versionLabel?: string
 }
 
@@ -360,7 +361,7 @@ export async function pullUpdateOrchestrated(
 export async function pushOrchestrated(
   deploymentId: string,
   deployment: UserSkillDeploymentInfo,
-  opts?: { createVersion?: boolean; versionLabel?: string },
+  opts?: { createVersion?: boolean; versionNumber?: string; versionLabel?: string },
 ): Promise<PushDeploymentResponse> {
   try {
     const cur = await localAgent.hashOne(deployment.install_path)
@@ -389,6 +390,7 @@ export async function pushOrchestrated(
       currentHash: cur.hash,
       files: folder.files,
       createVersion: opts?.createVersion ?? false,
+      versionNumber: opts?.versionNumber ?? '',
       versionLabel: opts?.versionLabel ?? '',
     })
   } catch (e) {
@@ -662,7 +664,7 @@ export async function deployNativeSkillOrchestrated(
  * cloud 下无意义；改由本地代理扫描**用户机器**的平台 skill 目录（health.platformSkillDirs），
  * 按 `scan.installedAt` 汇总每个 skillId 的安装状态。前端展示点据此覆盖 deployed_* 展示。
  *
- * 返回 `{ [skillId]: { cursor, codex, windsurf } }`；本地代理不可达/目录为空时返回空表（调用方回退）。
+ * 返回 `{ [安装目录自然名]: { cursor, codex, windsurf, ... } }`；本地代理不可达/目录为空时返回空表（调用方回退）。
  */
 export async function getPlatformInstalledStatus(): Promise<
   Record<string, InstalledAtStatus>

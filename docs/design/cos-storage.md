@@ -9,11 +9,11 @@
 - `STORAGE_BACKEND=local`（默认）：`LocalObjectStore`，键映射到本地文件系统（保留现有开发体验）。
 - `STORAGE_BACKEND=cos`（生产）：`CosObjectStore`，用 `cos-python-sdk-v5` 读写 COS。
 
-桶：`vibebara-1327732770`（AppId 1327732770）、region `ap-chengdu`。
+生产桶：`vibebara-prod-1327732770`（AppId 1327732770）、region `ap-chengdu`。
 
 ## 2. 安全提醒（重要）
 
-桶当前为「公有读写」=任何人凭对象 URL 即可读 / 改 / 删 skill 内容，属高风险。本方案用 **SDK + SecretId/SecretKey** 访问，不依赖公共 ACL；**强烈建议尽快把桶收紧为私有**（仅密钥访问），代码无需任何改动。密钥务必只经环境变量注入，不入库、不入前端、不进 git。
+生产桶采用私有读写。本方案用 **SDK + SecretId/SecretKey** 访问，不依赖公共 ACL；密钥务必只经环境变量注入，不入库、不入前端、不进 git。
 
 ## 3. ObjectStore 抽象
 
@@ -23,7 +23,7 @@ graph TD
   iface["ObjectStore 接口"]
   localimpl["LocalObjectStore<br/>root = COWORK_DATA_DIR"]
   cosimpl["CosObjectStore<br/>cos-python-sdk-v5"]
-  cos["COS 桶 vibebara-1327732770 (ap-chengdu)"]
+  cos["COS 桶 vibebara-prod-1327732770 (ap-chengdu)"]
   consumers --> iface
   iface --> localimpl
   iface --> cosimpl
@@ -51,11 +51,11 @@ class ObjectStore:
 
 `LocalObjectStore` 的 root 取 `COWORK_DATA_DIR`，键为相对路径，落地后与现有磁盘布局完全一致；`CosObjectStore` 在键前再拼可选 `COS_PREFIX`。
 
-- 个人 Skill：`skills/personal/{id}/skill.config.yaml`、`/SKILL.md`、`/scripts/**`、`/references/**`、`/assets/**`、`/LICENSE`
+- 个人 Skill：`skills/personal/{owner_id}/{id}/skill.config.yaml`、`/SKILL.md`、`/scripts/**`、`/references/**`、`/assets/**`、`/LICENSE`
 - 团队 Skill：`skills/team/{id}/...`
 - 版本快照资源：`skill_versions/{skill_id}/{version_id}/scripts|references|assets/**`
 
-DB 列 `store_path` 改存「对象键前缀」（如 `skills/personal/foo`、`skills/team/foo-team-abc12345`），各消费者以此作为前缀读写。旧数据已在拆表阶段约定丢弃，前缀为新写。
+个人 Skill 的 `id` 是内部 UUID，自然名保存在 `name`；数据库以 `(owner_id, name)` 保证用户内不重名，不同用户可以使用同一名称。DB 列 `store_path` 存「对象键前缀」（如 `skills/personal/{owner_id}/{uuid}`、`skills/team/foo-team-abc12345`），各消费者只按该字段寻址，不从自然名反推对象路径。旧数据约定丢弃，不执行历史前缀迁移。
 
 ## 5. 内容哈希口径（必须位级一致）
 
@@ -88,7 +88,7 @@ DB 列 `store_path` 改存「对象键前缀」（如 `skills/personal/foo`、`s
 
 ```env
 STORAGE_BACKEND=cos
-COS_BUCKET=vibebara-1327732770
+COS_BUCKET=vibebara-prod-1327732770
 COS_REGION=ap-chengdu
 COS_SECRET_ID=你的SecretId
 COS_SECRET_KEY=你的SecretKey

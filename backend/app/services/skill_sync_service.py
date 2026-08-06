@@ -183,8 +183,8 @@ class SkillSyncService:
                 await session.get(PersonalSkill, skill_id)
                 or await session.get(TeamSkill, skill_id)
             )
-            if pkg and pkg.display_name:
-                return pkg.display_name
+            if pkg:
+                return pkg.display_name or pkg.name
         return skill_id
 
     @classmethod

@@ -49,8 +49,8 @@ $desktopDir   = Join-Path $ROOT "desktop"
 $venvPython   = Join-Path $backendDir ".venv\Scripts\python.exe"
 
 # The current test endpoint has not migrated to TLS yet.
-$DEFAULT_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$DEFAULT_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$DEFAULT_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
+$DEFAULT_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
 
 # Helpers
 

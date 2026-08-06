@@ -8,7 +8,7 @@
 
 ## 2. 目标架构
 
-- 表 `personal_skills`：PK `id` = skill 自然名（个人仓库内唯一），列含 `owner_id`(FK users) + 公共列；磁盘 `{SKILL_STORE_DIR}/personal/{id}/`。
+- 表 `personal_skills`：PK `id` = 内部 UUID，`name` = 自然名，`owner_id` 为必填 FK；以 `UniqueConstraint(owner_id, name)` 保证用户内名称唯一。对象前缀为 `skills/personal/{owner_id}/{id}/`。
 - 表 `team_skills`：PK `id` = 单列代理键 `{自然名}-team-{team_id[:8]}`，附 `name`（自然名）、`team_id`(FK teams)、`source_skill_id`（软引用个人 id），`UniqueConstraint(team_id, name)`；磁盘 `{SKILL_STORE_DIR}/team/{id}/`。
 - 公共列由 mixin `_SkillColumnsMixin` 复用：display_name/description/short_description/version/tags/imported_from/store_path/content_hash/deployed_*7/created_at/updated_at。
 - 外键改指：`project_skills.skill_id` 与 `user_skill_deployments.team_skill_id` 均 `ForeignKey("team_skills.id")`（项目 Skill 必为团队 Skill）。
@@ -30,10 +30,10 @@
 - `_get_row(session, id)`：先查 `PersonalSkill` 再查 `TeamSkill`。
 - `_upsert_db(..., scope, team_id, source_skill_id, name)`：按 scope 写对应表。
 - `list_all(scope, owner_id, team_ids)`：personal 表按 owner 过滤，team 表按 team_id 过滤。
-- 个人导入（`import_from_external` allow_team_update=False）：仅与「他人占用的同名个人 Skill」冲突 → 分配新 id；与团队同名不再冲突（不同表）。
+- 个人导入（`import_from_external` allow_team_update=False）：只在当前用户的 `(owner_id, name)` 命名空间内判重；同名时覆盖本人的既有 UUID，不同用户同名互不冲突。
 - 团队回写（promote/push，allow_team_update=True + target_skill_id）：写团队表。
 - `copy_to_team` / `import_external_to_team`：读个人 / 落团队表 + 团队目录，config 写入 `team_id` / `source_skill_id` 供 `_sync_from_filesystem` 重建识别。
-- `_sync_from_filesystem`：分别扫 `personal/` 与 `team/`，按表分别裁剪「DB 有磁盘无」的记录（不再全表 delete）。
+- `_sync_from_filesystem`：按 `personal/{owner_id}/{uuid}` 与 `team/{id}` 扫描；仅在对象目录完整列举成功后裁剪 DB，COS 瞬时列举失败时保留数据库索引。
 
 ## 4. 受影响文件
 
@@ -41,7 +41,7 @@
 - 服务：`native_skill_store.py`（全量按两表路由）、`project_service.py`（所有 `SkillPackage`→`TeamSkill`，删 3 处 `pkg.scope="team"`，`add_skill_to_project` 改为要求团队表已有该 Skill）、`team_service.py`（删团队级联删 `team_skills`）、`skill_sync_service.py`（双表查）、`skill_version_service.py`（团队表）、`file_watcher_service.py`（按 `personal/`、`team/` 分流 upsert）。
 - API/Schema：`api/skill_store.py`（团队鉴权改「命中团队表」）、`schemas/skill_forge.py`（`NativeSkillItem` 增 `name`）。
 - DB 引导：`core/database.py`（`_migrate_add_columns` 去掉 `skill_packages` 段；新表由 `create_all` 直接建出）。
-- 前端：`api/skillStore.ts` `NativeSkillItem` 增可选 `name`（仅类型，无行为变更）。
+- 前端：`api/skillStore.ts` 的 `NativeSkillItem.name` 为必填自然名；卡片展示、同名判定和本机安装状态按 `name`，API 操作与路由仍按内部 `id`。
 
 ## 5. 部署（老数据一键丢弃）
 
@@ -59,5 +59,6 @@ docker compose up -d --build    # 重建空库（create_all 建 personal_skills/
 
 ## 6. 验证
 
-- `python -m compileall backend/app`、`import app.main` + `configure_mappers()` 均通过；`Base.metadata.sorted_tables` 含 `personal_skills`/`team_skills` 且外键依赖解析正常。
-- 待手测（需服务器 + 本地代理）：个人 CRUD、从 IDE 导入、复制到团队、项目部署、提升、推送、拉取、版本回滚、删团队级联。
+- 后端回归测试覆盖：跨用户同名创建得到不同 UUID/对象前缀、同用户重名拒绝、`(owner_id, name)` 唯一约束、个人权限隔离、COS 列举失败不裁剪 DB。
+- `python -m compileall app` 与前端 `npm run build` 通过。
+- 上线后仍需真实服务器 + 本地代理烟测：两个账号创建同名 Skill、导入覆盖、复制到团队、按自然名部署、推送/拉取和版本回滚。

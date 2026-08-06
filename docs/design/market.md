@@ -139,9 +139,10 @@ flowchart TD
 
 ## 获取（复制到个人仓库）
 
-`POST /market/{id}/acquire`：校验 `approved` → `_unique_personal_id` 生成全局唯一新个人 Skill id →
-`copy_prefix(当前快照, skills/personal/{new_id})` → 改写 config（`name` / `display_name` / `scope=personal` /
-软引用 `source_skill_id=市场条目id`）→ upsert 个人 Skill 行。获取始终针对**当前快照**，不针对历史版本。
+`POST /market/{id}/acquire`：校验 `approved` → `_unique_personal_name` 在当前用户命名空间内选择自然名 →
+生成内部 UUID → `copy_prefix(当前快照, skills/personal/{owner_id}/{uuid})` → 改写 config
+（`name` / `display_name` / `scope=personal` / 软引用 `source_skill_id=市场条目id`）→
+upsert 个人 Skill 行。不同用户可以获取同名 Skill；获取始终针对**当前快照**，不针对历史版本。
 
 ## 删除 / 撤回
 

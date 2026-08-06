@@ -110,6 +110,7 @@ def test_team_skill_reads_require_membership(tmp_path, monkeypatch):
 def test_ownerless_personal_skill_is_not_public():
     row = PersonalSkill(
         id="ownerless",
+        name="ownerless",
         owner_id=None,
         display_name="",
         description="",

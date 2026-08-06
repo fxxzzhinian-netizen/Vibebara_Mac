@@ -207,7 +207,9 @@ async def update_skill(
 
         result = await NativeSkillStore.update(
             skill_id, data.partial, vibeh_content=data.vibeh_content, user_id=user_id,
-            create_version=data.create_version, version_label=data.version_label,
+            create_version=data.create_version,
+            version_number=data.version_number,
+            version_label=data.version_label,
         )
         return {
             "success": True,
@@ -221,6 +223,8 @@ async def update_skill(
         logger.warning(f"[store/update] {skill_id} 不存在")
         return {"success": False, "error": str(e)}
     except PermissionError as e:
+        return {"success": False, "error": str(e)}
+    except ValueError as e:
         return {"success": False, "error": str(e)}
     except Exception as e:
         logger.exception(f"[store/update] {skill_id} 更新失败")
@@ -596,8 +600,10 @@ class VersionResourceFileResponse(BaseModel):
     path: str = ""
     change: str = ""
     seq: Optional[int] = None
+    version_number: str = ""
     prev_version_id: Optional[str] = None
     prev_seq: Optional[int] = None
+    prev_version_number: Optional[str] = None
     new: Optional[Dict[str, Any]] = None
     old: Optional[Dict[str, Any]] = None
     diff: str = ""

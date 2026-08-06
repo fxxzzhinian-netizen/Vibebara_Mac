@@ -2,7 +2,12 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectSyncStore } from '@/stores/projectSyncStore'
-import { listNativeSkills, type NativeSkillItem } from '@/api/skillStore'
+import {
+  listNativeSkills,
+  listSkillVersions,
+  type NativeSkillItem,
+  type SkillVersionItem,
+} from '@/api/skillStore'
 import { getPlatformInstalledStatus } from '@/api/orchestration'
 import { useNotificationStore, formatNotification } from '@/stores/notificationStore'
 import { useSkillSync } from '@/composables/useSkillSync'
@@ -24,6 +29,11 @@ import type {
 import { parseUnifiedDiff, inlineSegments } from '@/utils/diffView'
 import type { DiffRow, DiffRowType, InlinePair, SegOp } from '@/utils/diffView'
 import { promptOpenAfterDeploy } from '@/utils/openAfterDeploy'
+import {
+  isValidVersionNumber,
+  nextVersionNumber,
+  versionNumberOf,
+} from '@/utils/versionNumber'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,10 +50,6 @@ const { connected } = useSkillSync(() => projectId.value, async () => {
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
 const showAddSkill = ref(false)
-const showEditProject = ref(false)
-const editProjectName = ref('')
-const editProjectDescription = ref('')
-const projectSaving = ref(false)
 const showDeployModal = ref(false)
 const deploySkillId = ref('')
 const deployTool = ref<'cursor' | 'codex' | 'windsurf' | 'claude' | 'kiro' | 'trae' | 'qoder' | 'workbuddy'>('cursor')
@@ -347,6 +353,11 @@ async function resumeTracking(deploymentId: string) {
 }
 
 async function pushDeploy(deploymentId: string) {
+  const deployment = findDeploymentById(deploymentId)
+  if (!deployment) {
+    toast.error('未找到部署记录')
+    return
+  }
   const proceed = await confirmDialog({
     title: '推送到团队仓库',
     message: '推送将把本地改动同步到团队仓库，其他成员可拉取更新，是否继续？',
@@ -355,14 +366,44 @@ async function pushDeploy(deploymentId: string) {
   if (!proceed) return
   // 是否成版本：选「更新版本」则本次推送创建一条版本快照（可在 Skill 详情页查看/回滚）。
   const createVersion = await confirmDialog({
-    title: '是否更新版本序列号？',
+    title: '是否更新版本号？',
     message:
-      '更新版本：本次推送创建一个新版本（序列号 +1，可在 Skill 详情页查看/回滚）。\n仅同步：只同步内容，不创建版本。',
+      '更新版本：本次推送可确认或填写具体版本号（默认次版本 +1，可在 Skill 详情页查看/回滚）。\n仅同步：只同步内容，不创建版本。',
     confirmText: '更新版本',
     cancelText: '仅同步',
   })
+  let versionNumber = ''
   let versionLabel = ''
   if (createVersion) {
+    let currentVersions: SkillVersionItem[] = []
+    try {
+      const res = await listSkillVersions(deployment.team_skill_id)
+      if (res.success) currentVersions = res.versions
+    } catch {
+      // 获取建议版本失败时仍预填首版，由后端做最终校验。
+    }
+    const enteredVersion = await promptInput({
+      title: '新版本号',
+      message: '版本号格式为 x.y；默认次版本加 1，也可以直接覆盖输入。',
+      defaultValue: nextVersionNumber(currentVersions),
+      placeholder: '例如：1.2',
+      confirmText: '下一步',
+      maxlength: 32,
+    })
+    if (enteredVersion === null) return
+    versionNumber = enteredVersion.trim()
+    if (!isValidVersionNumber(versionNumber)) {
+      toast.error('版本号格式不正确，请输入 x.y，例如 1.2')
+      return
+    }
+    if (
+      currentVersions.some(
+        (version) => versionNumberOf(version) === versionNumber,
+      )
+    ) {
+      toast.error(`版本号 v${versionNumber} 已存在`)
+      return
+    }
     // 应用内输入框（替代 Electron 不支持的 window.prompt）；取消视为不填备注，仍继续推送。
     const label = await promptInput({
       title: '新版本备注',
@@ -374,7 +415,11 @@ async function pushDeploy(deploymentId: string) {
     versionLabel = (label ?? '').trim()
   }
   pushingId.value = deploymentId
-  const res = await projectStore.push(deploymentId, { createVersion, versionLabel })
+  const res = await projectStore.push(deploymentId, {
+    createVersion,
+    versionNumber,
+    versionLabel,
+  })
   pushingId.value = ''
   if (!res.success) {
     if (res.conflict) {
@@ -388,7 +433,9 @@ async function pushDeploy(deploymentId: string) {
   if (res.no_change) {
     toast.info('本地无改动，无需推送')
   } else if (res.version) {
-    toast.success(`已推送并同步到项目，已创建版本 v${res.version.seq}`)
+    toast.success(
+      `已推送并同步到项目，已创建版本 v${versionNumberOf(res.version)}`,
+    )
   } else {
     toast.success('已推送并同步到项目')
   }
@@ -535,40 +582,6 @@ function statusLabel(status?: string): string {
   return labels[status || ''] || '未部署'
 }
 
-function openEditProject() {
-  const project = projectStore.currentProject
-  if (!project) return
-  editProjectName.value = project.name
-  editProjectDescription.value = project.description || ''
-  showEditProject.value = true
-}
-
-async function saveProject() {
-  const project = projectStore.currentProject
-  const name = editProjectName.value.trim()
-  if (!project || projectSaving.value) return
-  if (!name) {
-    toast.warning('项目名称不能为空')
-    return
-  }
-
-  const description = editProjectDescription.value.trim()
-  if (name === project.name && description === (project.description || '')) {
-    showEditProject.value = false
-    return
-  }
-
-  projectSaving.value = true
-  const res = await projectStore.update(project.id, name, description)
-  projectSaving.value = false
-  if (res.success) {
-    showEditProject.value = false
-    toast.success('项目信息已保存')
-  } else {
-    toast.error(res.error || '保存项目信息失败')
-  }
-}
-
 function formatTime(ts: string): string {
   if (!ts) return ''
   const d = new Date(ts)
@@ -597,17 +610,6 @@ function goBack() {
           </button>
           <h2 class="editor-title">{{ projectStore.currentProject?.name || '项目' }}</h2>
           <SyncStatusBadge :connected="connected" />
-          <button
-            v-if="projectStore.currentProject"
-            class="btn-edit-project"
-            title="编辑项目名称与描述"
-            aria-label="编辑项目名称与描述"
-            @click="openEditProject"
-          >
-            <svg viewBox="0 0 1024 1024" width="17" height="17" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <path d="M469.333333 128a42.666667 42.666667 0 0 1 0 85.333333H213.333333v597.333334h597.333334v-256l0.298666-4.992A42.666667 42.666667 0 0 1 896 554.666667v256a85.333333 85.333333 0 0 1-85.333333 85.333333H213.333333a85.333333 85.333333 0 0 1-85.333333-85.333333V213.333333a85.333333 85.333333 0 0 1 85.333333-85.333333z m414.72 12.501333a42.666667 42.666667 0 0 1 0 60.330667L491.861333 593.066667a42.666667 42.666667 0 0 1-60.330666-60.330667l392.192-392.192a42.666667 42.666667 0 0 1 60.330666 0z" fill="currentColor"></path>
-            </svg>
-          </button>
         </div>
       </div>
 
@@ -749,48 +751,6 @@ function goBack() {
         </ul>
       </div>
     </div>
-
-    <!-- 编辑项目信息弹窗 -->
-    <BaseModal
-      v-model="showEditProject"
-      title="编辑项目信息"
-      :closable="!projectSaving"
-      :close-on-overlay="!projectSaving"
-    >
-      <div class="field">
-        <label>项目名称</label>
-        <input
-          v-model="editProjectName"
-          maxlength="128"
-          placeholder="输入项目名称"
-          @keyup.enter="saveProject"
-        />
-      </div>
-      <div class="field">
-        <label>项目描述</label>
-        <textarea
-          v-model="editProjectDescription"
-          rows="4"
-          placeholder="输入项目描述（可选）"
-        ></textarea>
-      </div>
-      <template #footer>
-        <button
-          class="btn-sm btn-soft"
-          :disabled="projectSaving"
-          @click="showEditProject = false"
-        >
-          取消
-        </button>
-        <button
-          class="btn-sm btn-primary"
-          :disabled="projectSaving || !editProjectName.trim()"
-          @click="saveProject"
-        >
-          {{ projectSaving ? '保存中…' : '保存' }}
-        </button>
-      </template>
-    </BaseModal>
 
     <!-- 添加 Skill 弹窗 -->
     <BaseModal v-model="showAddSkill" title="关联 Skill 到项目">
@@ -990,26 +950,6 @@ function goBack() {
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.01em;
-  color: #151717;
-}
-
-.btn-edit-project {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #9ca3af;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.btn-edit-project:hover {
-  background: rgba(21, 23, 23, 0.06);
   color: #151717;
 }
 

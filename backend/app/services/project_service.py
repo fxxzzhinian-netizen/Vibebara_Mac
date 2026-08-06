@@ -538,7 +538,7 @@ async def list_project_skills(
             items.append(
                 {
                     "skill_id": ps.skill_id,
-                    "display_name": pkg.display_name,
+                    "display_name": pkg.display_name or pkg.name,
                     "description": pkg.description,
                     "version": ps.version,
                     "content_hash": pkg.content_hash or ps.content_hash,
@@ -568,7 +568,7 @@ async def deploy_project_skill(
     if tool_type not in SUPPORTED_TOOLS:
         return {"success": False, "error": "tool_type must be cursor, codex, windsurf, claude, kiro, trae, qoder or workbuddy"}
 
-    # 全局部署：落本机平台目录 ~/.{tool}/skills/{skill_id}，一次性安装、不登记跟踪。
+    # 全局部署：落本机平台目录 ~/.{tool}/skills/{自然名}，一次性安装、不登记跟踪。
     # 仍校验项目存在与 Skill 关联关系，保持与项目级部署一致的访问约束。
     if scope == "platform":
         async with async_session_factory() as session:
@@ -615,7 +615,7 @@ async def deploy_project_skill(
         if not ref:
             return {"success": False, "error": "Skill is not added to this project"}
 
-        install_path = _install_root(deploy_path, tool_type) / skill_id
+        install_path = _install_root(deploy_path, tool_type) / pkg.name
         if install_path.exists() and not overwrite:
             return {"success": False, "error": "Install path exists; pass overwrite=true"}
 
@@ -1088,6 +1088,7 @@ async def push_deployment(
     deployment_id: str,
     user_id: str,
     create_version: bool = False,
+    version_number: str = "",
     version_label: str = "",
 ) -> Dict[str, Any]:
     """
@@ -1095,7 +1096,7 @@ async def push_deployment(
     生成抽象层改动点；无冲突则写回团队仓库（推送即同步到平台），
     并把同 Skill 其他用户实例标记为可更新/冲突。
 
-    create_version=True 时（用户在"是否更新版本序列号"弹窗选择"是"），推送成功后
+    create_version=True 时（用户在"是否更新版本号"弹窗选择"是"），推送成功后
     对团队仓库当前内容打一条版本快照（可在 Skill 详情页查看/回滚）。
     """
     async with async_session_factory() as session:
@@ -1222,6 +1223,18 @@ async def push_deployment(
         project_team_id = project.team_id
         project_id_val = project.id
 
+    resolved_version_number = ""
+    if create_version:
+        from app.services.skill_version_service import SkillVersionService
+
+        try:
+            resolved_version_number = await SkillVersionService.resolve_version_number(
+                skill_id,
+                version_number,
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+
     # 无冲突：解析后的本地内容写回团队仓库（推送即同步到平台）
     await NativeSkillStore.import_from_external(
         install_path,
@@ -1312,6 +1325,7 @@ async def push_deployment(
         version = await _maybe_create_version(
             skill_id=skill_id,
             user_id=user_id,
+            version_number=resolved_version_number,
             label=version_label,
             summary=summary,
             change_items=change_items,
@@ -1333,6 +1347,7 @@ async def _maybe_create_version(
     *,
     skill_id: str,
     user_id: str,
+    version_number: str,
     label: str,
     summary: str,
     change_items: List[Dict[str, Any]],
@@ -1345,10 +1360,13 @@ async def _maybe_create_version(
             skill_id,
             created_by=user_id,
             source="push",
+            version_number=version_number,
             label=label or "",
             change_summary=summary,
             change_items=change_items,
         )
+    except ValueError:
+        raise
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[push] 创建版本快照失败 skill='{skill_id}': {e}")
         return None
@@ -1571,19 +1589,13 @@ async def _build_artifact_payload(
     if tool not in SUPPORTED_TOOLS:
         return {"success": False, "error": "tool must be cursor, codex, windsurf, claude, kiro, trae, qoder or workbuddy"}
 
-    # store_path（= 对象键前缀）以对象存储为权威来源，与 _assert_skill_accessible
-    # (NativeSkillStore.get_by_id) 及 NativeSkillStore.build 的 _resolve_prefix 同口径。
-    # 历史实现改用 DB 行的 store_path 列：当对象存储已有该 Skill、但 DB 行缺失或
-    # store_path 列为空时（对象存储与库不同步 / 历史导入未回填 store_path），归属校验
-    # 已通过、build 也能成功，却在此处误报 "Skill '<id>' not found" 导致部署失败。
-    # 改为对象存储解析、DB 仅作兜底，消除该不一致。
-    store_path, _scope = NativeSkillStore._resolve_prefix(skill_id)
-    if not store_path:
-        async with async_session_factory() as session:
-            pkg = await session.get(TeamSkill, skill_id)
-            if pkg is None:
-                pkg = await session.get(PersonalSkill, skill_id)
-            store_path = pkg.store_path if pkg else ""
+    # API 使用内部记录 id 寻址；构建产物返回自然名供本地代理作为安装目录名。
+    async with async_session_factory() as session:
+        pkg = await session.get(TeamSkill, skill_id)
+        if pkg is None:
+            pkg = await session.get(PersonalSkill, skill_id)
+        store_path = pkg.store_path if pkg else ""
+        install_name = pkg.name if pkg else ""
     if not store_path:
         logger.warning(
             "[build-artifact] 未找到 Skill 内容 skill_id=%s backend=%s "
@@ -1602,7 +1614,7 @@ async def _build_artifact_payload(
         return {"success": False, "error": f"build failed: {e}"}
 
     return _assemble_artifact(
-        skill_id, tool, repo_version, store_path, build_result.get("data", []) or []
+        install_name, tool, repo_version, store_path, build_result.get("data", []) or []
     )
 
 
@@ -1854,6 +1866,7 @@ async def push_deployment_content(
     current_hash: str,
     files: List[Dict[str, Any]],
     create_version: bool = False,
+    version_number: str = "",
     version_label: str = "",
 ) -> Dict[str, Any]:
     """③ 推送（接收上传内容）：对应 push_deployment，但输入改为上传的 install 内容。
@@ -1994,6 +2007,20 @@ async def push_deployment_content(
                 "deployment": conflict_deployment,
             }
 
+        resolved_version_number = ""
+        if create_version:
+            from app.services.skill_version_service import SkillVersionService
+
+            try:
+                resolved_version_number = (
+                    await SkillVersionService.resolve_version_number(
+                        skill_id,
+                        version_number,
+                    )
+                )
+            except ValueError as exc:
+                return {"success": False, "error": str(exc)}
+
         # 无冲突：解析后的上传内容写回团队仓库（推送即同步到平台）
         await NativeSkillStore.import_from_external(
             str(src),
@@ -2078,6 +2105,7 @@ async def push_deployment_content(
         version = await _maybe_create_version(
             skill_id=skill_id,
             user_id=user_id,
+            version_number=resolved_version_number,
             label=version_label,
             summary=summary,
             change_items=change_items,
@@ -2390,7 +2418,7 @@ async def merge_apply(
     if not files:
         return {"success": False, "error": "本地内容缺失，无法合并"}
 
-    prefix, _scope = NativeSkillStore._resolve_prefix(skill_id)
+    prefix, _scope = await NativeSkillStore._resolve_prefix(skill_id)
     if not prefix:
         return {"success": False, "error": "团队仓库内容缺失，无法合并"}
 
@@ -2590,7 +2618,7 @@ async def get_changes_since(
                 select(TeamSkill).where(TeamSkill.id.in_(skill_ids))
             )
             for skill in skills_result.scalars().all():
-                skill_map[skill.id] = skill.display_name or skill.id
+                skill_map[skill.id] = skill.display_name or skill.name or skill.id
 
         return [
             {

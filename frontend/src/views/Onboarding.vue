@@ -36,6 +36,8 @@ interface PlatformTool {
   icon: string
 }
 
+type IconLoadState = 'loading' | 'ready' | 'error'
+
 const router = useRouter()
 const auth = useAuthStore()
 const workspace = useWorkspaceStore()
@@ -57,6 +59,44 @@ const PLATFORM_TOOLS: PlatformTool[] = [
   { key: 'qoder', label: 'Qoder', icon: qoderIcon },
   { key: 'workbuddy', label: 'WorkBuddy', icon: workbuddyIcon },
 ]
+
+const iconLoadStates = ref<Record<PlatformKey, IconLoadState>>(
+  Object.fromEntries(
+    PLATFORM_TOOLS.map((tool) => [tool.key, 'loading']),
+  ) as Record<PlatformKey, IconLoadState>,
+)
+let iconPreloadPromise: Promise<void> | null = null
+
+function setIconLoadState(key: PlatformKey, state: IconLoadState) {
+  iconLoadStates.value[key] = state
+}
+
+function preloadToolIcons(): Promise<void> {
+  if (iconPreloadPromise) return iconPreloadPromise
+  iconPreloadPromise = Promise.all(
+    PLATFORM_TOOLS.map(
+      (tool) =>
+        new Promise<void>((resolve) => {
+          const image = new Image()
+          image.onload = async () => {
+            try {
+              await image.decode()
+            } catch {
+              // onload 已确认资源可用；部分 Chromium 版本可能不支持重复 decode。
+            }
+            setIconLoadState(tool.key, 'ready')
+            resolve()
+          }
+          image.onerror = () => {
+            setIconLoadState(tool.key, 'error')
+            resolve()
+          }
+          image.src = tool.icon
+        }),
+    ),
+  ).then(() => undefined)
+  return iconPreloadPromise
+}
 
 // 启动器工具 id → 平台 key（codex-cli/app→codex，claude-code/app→claude，其余同名）
 function mapToPlatformKey(id: ToolId): PlatformKey | null {
@@ -201,6 +241,7 @@ function nextTool() {
 onMounted(() => {
   updateViewportWidth()
   window.addEventListener('resize', updateViewportWidth)
+  void preloadToolIcons()
 })
 
 onBeforeUnmount(() => {
@@ -208,6 +249,7 @@ onBeforeUnmount(() => {
 })
 
 function chooseScene(mode: DevMode) {
+  void preloadToolIcons()
   devMode.value = mode
   phase.value = 'tools'
   currentIndex.value = 0
@@ -304,11 +346,8 @@ async function finish() {
           <p v-else>已为你识别本机工具，选择一个作为默认</p>
         </div>
 
-        <!-- 轮播常驻；检测中加半透明遮罩并屏蔽交互，完成后放开选择 -->
+        <!-- 轮播常驻；检测中仅屏蔽交互，图标保持清晰可见 -->
         <div class="tools-body" :class="{ 'is-loading': detecting }">
-          <transition name="mask-fade">
-            <div v-if="detecting" class="tools-mask" aria-hidden="true"></div>
-          </transition>
           <div class="tools-carousel">
           <button
             v-show="canScroll"
@@ -340,7 +379,29 @@ async function finish() {
                   </svg>
                   <span class="tool-check-tip">已检测到</span>
                 </span>
-                <img :src="tool.icon" :alt="tool.label" class="tool-icon" draggable="false" />
+                <span
+                  v-if="iconLoadStates[tool.key] === 'loading'"
+                  class="tool-icon-placeholder"
+                  aria-hidden="true"
+                ></span>
+                <span
+                  v-else-if="iconLoadStates[tool.key] === 'error'"
+                  class="tool-icon-fallback"
+                  role="img"
+                  :aria-label="`${tool.label} 图标加载失败`"
+                >
+                  {{ tool.label.slice(0, 1).toUpperCase() }}
+                </span>
+                <img
+                  :src="tool.icon"
+                  :alt="tool.label"
+                  class="tool-icon"
+                  :class="{ ready: iconLoadStates[tool.key] === 'ready' }"
+                  decoding="async"
+                  draggable="false"
+                  @load="setIconLoadState(tool.key, 'ready')"
+                  @error="setIconLoadState(tool.key, 'error')"
+                />
               </span>
               <span class="tool-label">{{ tool.label }}</span>
             </button>
@@ -515,16 +576,6 @@ async function finish() {
   user-select: none;
 }
 
-/* 半透明遮罩：盖在轮播/按钮之上（高于箭头 200 / 卡片 100）。
-   向内收缩，只罩住中间的工具+按钮区域，避免溢出遮住两侧/上下的背景底色。 */
-.tools-mask {
-  position: absolute;
-  inset: 8px 14% 0;
-  z-index: 300;
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: 16px;
-}
-
 /* 工具轮播（coverflow）：选中项居中最大、两侧逐级缩小；固定可见 7 个（左右各 3），箭头贴边 */
 .tools-carousel {
   position: relative;
@@ -599,9 +650,46 @@ async function finish() {
 }
 
 .tool-icon {
+  position: absolute;
   width: 70px;
   height: 70px;
   object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.tool-icon.ready {
+  opacity: 1;
+}
+
+.tool-icon-placeholder,
+.tool-icon-fallback {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+}
+
+.tool-icon-placeholder {
+  background: linear-gradient(90deg, #eceef1 25%, #f7f8f9 50%, #eceef1 75%);
+  background-size: 200% 100%;
+  animation: icon-shimmer 1.1s ease-in-out infinite;
+}
+
+.tool-icon-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e5e7eb;
+  color: #4b5563;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@keyframes icon-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .tool-label {
@@ -742,14 +830,6 @@ async function finish() {
 
 .step-dot.active:hover {
   background: #151717;
-}
-
-/* 遮罩淡出：检测完成后缓慢消失，逐渐显露下方工具 */
-.mask-fade-leave-active {
-  transition: opacity 0.7s ease;
-}
-.mask-fade-leave-to {
-  opacity: 0;
 }
 
 /* 过渡动画 */

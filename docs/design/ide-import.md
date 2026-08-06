@@ -132,44 +132,16 @@ export async function scanIdeGlobalSkills(): Promise<{
 - **顺序导入** `confirmAddFromIde()`：按分组顺序遍历勾选项，逐个 `importToNativeStore(pkg.source_path, group.tool)`，汇总成功 / 失败；全部成功走 `finishDone`，部分失败保持弹层打开并内联报错（与本地 / 链接 tab 一致）。
 - **模板与按钮**：替换原占位块为「检索中转圈 → 按 IDE 分组列表（组标题 + 数量徽标 + 复选框 + 全选 / 取消）」；底部新增 `ide` 分支按钮「导入所选 (N)」，及未检索时的「检索 IDE 目录」回退按钮。
 - **空态 / 错误**：无任何 IDE 目录含 Skill → 「未在本机各 IDE 全局目录发现可导入的 Skill（需包含 SKILL.md）」；orchestration 关闭或检索失败 → 复用 `addSkillError` 文案区显示「该功能仅桌面客户端支持」等。
-- **同名冲突标记（个人仓库）**：检索完成后并行拉取 `listNativeSkills('personal')`，得到个人仓库已有 id 集合 `personalIdSet`。`existsInPersonal(p)` 判定每个扫描项是否与个人仓库同名：
+- **同名冲突标记（个人仓库）**：检索完成后并行拉取 `listNativeSkills('personal')`，得到当前用户已有自然名集合 `personalNameSet`。`existsInPersonal(p)` 按扫描项名称判定是否与本人的个人仓库同名：
   - 已存在项：行内显示「已存在 · 勾选将覆盖」橙色徽标，且**默认不勾选**（默认跳过，避免误覆盖）；用户勾选即表示「覆盖」，导入时后端直接覆盖该个人 Skill。
   - 不存在项：默认勾选，正常导入。
 
-### 5.4 `backend/app/services/native_skill_store.py`（团队同名 → 独立个人快照）
+### 5.4 `backend/app/services/native_skill_store.py`（用户级自然名空间）
 
-原逻辑：个人导入若与库中同 id 记录冲突，仅当对方为团队 Skill 时**抛错**（`Team repository skills can only be changed by deployment promotion`）。由于 `skill_packages.id` 是全局唯一主键、个人与团队共用一张表，团队副本名形如 `<base>-team-<8hex>`（见 `copy_to_team`），这些团队 Skill 被部署到 IDE 全局目录后，再从全局目录导入个人仓库就会撞主键报错。
-
-改为：个人导入（`allow_team_update=False` 且未指定 `target_skill_id`）遇到「团队 Skill / 他人个人 Skill」同名时，不再抛错，而是**分配一个全新空闲 id 作为独立个人快照导入**，原 Skill 保持不动：
-
-```python
-existing = await session.get(SkillPackage, skill_id)
-if existing and not allow_team_update:
-    own_personal = (
-        existing.scope == "personal"
-        and (not existing.owner_id or existing.owner_id == owner_id)
-    )
-    if not own_personal:
-        if target_skill_id:  # 推送/提升回写仍保护团队仓库
-            raise PermissionError("Team repository skills can only be changed by deployment promotion")
-        base = re.sub(r"-team-[0-9a-f]{8}$", "", skill_id) or skill_id  # 去团队后缀更友好
-        candidate = base
-        n = 1
-        while (await session.get(SkillPackage, candidate) is not None
-               or (Path(cls._store_dir) / candidate).exists()):
-            n += 1
-            candidate = f"{base}-{n}"
-        if not config.get("ui", {}).get("display_name"):
-            config.setdefault("ui", {})["display_name"] = base
-        config["name"] = candidate
-        skill_id = candidate
-```
-
-要点：
-- **个人自有同名**（`own_personal`）：保持既有「覆盖」语义（由前端是否勾选控制，故无需后端新增 `overwrite` 参数）。
-- **推送 / 提升回写**（`project_service.py` 三处 `allow_team_update=True`、`copy_to_team` 的 `target_skill_id`）不受影响，仍走团队保护。
-- 新 id 取「去 `-team-<8hex>` 后缀的基名」，若被占用再追加 `-2 / -3 ...`，确保全新空闲；原名落到 `ui.display_name`，卡片标题保持友好。
-- 该改动同时惠及链接 / 本地文件夹的个人导入（同样不再因团队同名而失败）。
+个人 Skill 使用内部 UUID 作为 `id`，自然名独立保存在 `name`；数据库唯一约束为
+`(owner_id, name)`。导入时只查询当前用户的同名记录：找到则复用该 UUID 并覆盖，
+未找到则生成新 UUID，写入 `skills/personal/{owner_id}/{uuid}`。团队 Skill 和其他用户
+即使使用相同自然名也不会产生主键或对象前缀冲突。
 
 ## 6. 边界与说明
 
@@ -177,7 +149,7 @@ if existing and not allow_team_update:
 - **个人导入即快照、不跟踪**：从 IDE 全局目录导入个人仓库只是把内容快照落库，不建立部署跟踪关系。
 - **同名冲突处理**：
   - 个人仓库同名 → 列表标「已存在」，默认跳过；勾选则覆盖（用户显式选择）。
-  - 团队仓库同名（或他人个人 Skill 同名）→ 后端分配新 id 作为独立个人快照导入，团队 Skill 不受影响。
+  - 团队仓库同名或他人个人 Skill 同名 → 因表与用户命名空间隔离，可直接导入为当前用户的新 UUID。
 - **同名 Skill 跨 IDE 重复**：按 IDE 分组分别展示，按上述冲突规则处理。
 - **「按顺序点击导入」**：以多选 + 「导入所选」实现，内部按分组顺序 for 循环逐个导入，体验与本地 / 链接 tab 一致。
 - **资源**：`read-folder` 以 `include:'skill'` 读取 `SKILL.md` 及 `scripts/references/assets/agents/LICENSE`，与本地文件夹导入同口径。
@@ -186,6 +158,6 @@ if existing and not allow_team_update:
 
 - `npx vue-tsc --noEmit` 类型检查通过。
 - 改动文件 `ReadLints` 无报错；后端 `python -m py_compile native_skill_store.py` 通过。
-- 端到端手测（需运行中的本地代理 + 已部署最新后端）：桌面壳启动后（`./build-desktop.ps1 -Quick -NoBe`）进入「个人 Skill 仓库 → + 新建 Skill → 从 IDE 工具导入」，确认：能检索到本机 Cursor / Codex 等全局目录的 Skill；个人同名项标「已存在」默认不勾选、勾选可覆盖；团队来源的同名项导入成功（作为独立个人快照、新 id），不再出现「Team repository skills can only be changed by deployment promotion」。
+- 端到端手测（需运行中的本地代理 + 已部署最新后端）：桌面壳启动后（`./build-desktop.ps1 -Quick -NoBe`）进入「个人 Skill 仓库 → + 新建 Skill → 从 IDE 工具导入」，确认：能检索到本机 Cursor / Codex 等全局目录的 Skill；本人同名项标「已存在」默认不勾选、勾选可覆盖；不同用户可各自导入同名 Skill，且对象前缀和 UUID 不同。
 
 > 注意：本次后端落库逻辑改动需重新部署云端后端（`git pull && docker compose up -d --build`）才会在连云端的桌面壳上生效；前端改动需 `npm run build` 重建 dist 后重启桌面壳。

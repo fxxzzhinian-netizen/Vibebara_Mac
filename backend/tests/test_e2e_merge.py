@@ -229,10 +229,10 @@ async def cleanup(ids: dict) -> None:
 # helpers
 # ------------------------------------------------------------------
 
-def _write_skill(deploy_path: str, skill_id: str, art: dict) -> dict:
+def _write_skill(deploy_path: str, art: dict) -> dict:
     status, w = agent_post("/local/write-skill", {
         "deployPath": deploy_path, "scope": "project", "tool": "cursor",
-        "skillId": skill_id, "contents": art["contents"],
+        "skillId": art["skill_id"], "contents": art["contents"],
         "resources": art["resources"], "overwrite": True, "ensureGitignore": True,
     })
     assert status == 200 and w.get("ok"), (status, w)
@@ -244,7 +244,7 @@ async def _deploy_for(ids: dict, user_id: str, project_dir: str) -> dict:
         ids["project_id"], ids["team_skill_id"], user_id, "cursor"
     )
     assert art.get("success"), art
-    w = _write_skill(project_dir, ids["team_skill_id"], art)
+    w = _write_skill(project_dir, art)
     reg = await project_service.register_deployment(
         project_id=ids["project_id"], skill_id=ids["team_skill_id"], user_id=user_id,
         tool="cursor", deploy_path=project_dir, install_path=w["installPath"],
@@ -304,14 +304,16 @@ async def run_merge_e2e(dir_a: str, dir_b: str) -> None:
             await s.commit()
 
         # --- 基线 skill（v1）：SKILL.md + scripts/run.py + assets/icon.png ---
-        await NativeSkillStore.create(
-            {"name": ids["skill_id"], "description": "merge demo"},
+        personal_name = ids["skill_id"]
+        personal_skill = await NativeSkillStore.create(
+            {"name": personal_name, "description": "merge demo"},
             vibeh_content="# merge demo\n\n基线正文。\n",
             owner_id=ids["user_id"],
         )
-        # 经对象存储 API 写资源（与后端真实写盘同口径，前缀 skills/personal/{id}/...）。
+        ids["skill_id"] = personal_skill["id"]
+        # 经对象存储 API 写资源（个人前缀含 owner_id 与内部 UUID）。
         store = NativeSkillStore._store()
-        prefix = NativeSkillStore._personal_prefix(ids["skill_id"])
+        prefix = personal_skill["store_path"]
         store.put_bytes(f"{prefix}/scripts/run.py", b"print('base v1')\n")
         store.put_bytes(f"{prefix}/assets/icon.png", bytes(range(256)))
         team_skill = await NativeSkillStore.copy_to_team(ids["skill_id"], ids["team_id"], ids["user_id"])
@@ -324,6 +326,8 @@ async def run_merge_e2e(dir_a: str, dir_b: str) -> None:
         dep_b = await _deploy_for(ids, ids["user_id_b"], dir_b)
         install_a = dep_a["install_path"]
         install_b = dep_b["install_path"]
+        assert Path(install_a).name == personal_name
+        assert Path(install_b).name == personal_name
         results.append(("setup", f"v1 部署完成 A/B；team_skill={ids['team_skill_id']}"))
 
         # --- A 本地新增脚本（未推送）→ 探测 dirty ---
@@ -383,7 +387,7 @@ async def run_merge_e2e(dir_a: str, dir_b: str) -> None:
         assert {"scripts/run.py", "scripts/a_extra.py", "scripts/b_extra.py"} <= art_paths, art_paths
 
         # ③ 本地代理覆盖落盘 A + 两端 hash 位级一致
-        w = _write_skill(dir_a, ids["team_skill_id"], art)
+        w = _write_skill(dir_a, art)
         installed_merged = w["installedHash"]
         assert project_service._compute_content_hash(w["installPath"]) == installed_merged
         assert (Path(install_a) / "scripts" / "a_extra.py").exists()

@@ -62,9 +62,9 @@ body {
 
 /* ===== 全局滚动条样式 ===== */
 :root {
-  --scrollbar-size: 12px;
-  --scrollbar-thumb: rgba(99, 102, 241, 0.4);
-  --scrollbar-thumb-hover: rgba(99, 102, 241, 0.62);
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: #d9d9d9;
+  --scrollbar-thumb-hover: #c7c7c7;
   --scrollbar-track: transparent;
 }
 

@@ -12,10 +12,12 @@ import {
   type TeamSkillHistoryItem,
   type TeamMemberInfo,
 } from '@/api/teams'
+import type { ProjectInfo } from '@/api/projects'
 import { useSkillStore } from '@/stores/skillStore'
 import { toast } from '@/composables/useToast'
 import { getSkeletonCount, setSkeletonCount } from '@/utils/skeletonCount'
 import { formatRelativeTime } from '@/utils/relativeTime'
+import { versionNumberOf } from '@/utils/versionNumber'
 import { useDirectionalTransition } from '@/composables/useDirectionalTransition'
 import AppTopNav from '@/components/AppTopNav.vue'
 import AddSkillModal from '@/components/AddSkillModal.vue'
@@ -94,6 +96,12 @@ const {
 const showCreateProject = ref(false)
 const newProjectName = ref('')
 const newProjectDesc = ref('')
+// 项目卡片上的编辑入口
+const showEditProject = ref(false)
+const editProjectTarget = ref<ProjectInfo | null>(null)
+const editProjectName = ref('')
+const editProjectDescription = ref('')
+const projectSaving = ref(false)
 // 删除项目确认弹窗（应用内弹窗，替代浏览器 window.confirm）
 const showDeleteProject = ref(false)
 const deleteTarget = ref<{ id: string; name: string } | null>(null)
@@ -341,6 +349,40 @@ async function createProject() {
   }
 }
 
+function openEditProject(project: ProjectInfo) {
+  editProjectTarget.value = project
+  editProjectName.value = project.name
+  editProjectDescription.value = project.description || ''
+  showEditProject.value = true
+}
+
+async function saveProject() {
+  const project = editProjectTarget.value
+  const name = editProjectName.value.trim()
+  if (!project || projectSaving.value) return
+  if (!name) {
+    toast.warning('项目名称不能为空')
+    return
+  }
+
+  const description = editProjectDescription.value.trim()
+  if (name === project.name && description === (project.description || '')) {
+    showEditProject.value = false
+    return
+  }
+
+  projectSaving.value = true
+  const res = await projectStore.update(project.id, name, description)
+  projectSaving.value = false
+  if (res.success) {
+    showEditProject.value = false
+    editProjectTarget.value = null
+    toast.success('项目信息已保存')
+  } else {
+    toast.error(res.error || '保存项目信息失败')
+  }
+}
+
 async function toggleAutoHotUpdate(event: Event) {
   if (!teamStore.currentTeam) return
   const checked = (event.target as HTMLInputElement).checked
@@ -585,42 +627,55 @@ watch(
                 ×
               </button>
               <div class="project-head" :class="{ 'has-delete': canManageProjects }">
-                <h4 class="project-title">{{ project.name }}</h4>
+                <div class="project-title-group">
+                  <h4 class="project-title">{{ project.name }}</h4>
+                  <button
+                    v-if="canManageProjects"
+                    class="project-edit"
+                    title="编辑项目名称与描述"
+                    aria-label="编辑项目名称与描述"
+                    @click.stop="openEditProject(project)"
+                  >
+                    <svg viewBox="0 0 1024 1024" width="16" height="16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M469.333333 128a42.666667 42.666667 0 0 1 0 85.333333H213.333333v597.333334h597.333334v-256l0.298666-4.992A42.666667 42.666667 0 0 1 896 554.666667v256a85.333333 85.333333 0 0 1-85.333333 85.333333H213.333333a85.333333 85.333333 0 0 1-85.333333-85.333333V213.333333a85.333333 85.333333 0 0 1 85.333333-85.333333z m414.72 12.501333a42.666667 42.666667 0 0 1 0 60.330667L491.861333 593.066667a42.666667 42.666667 0 0 1-60.330666-60.330667l392.192-392.192a42.666667 42.666667 0 0 1 60.330666 0z" fill="currentColor"></path>
+                    </svg>
+                  </button>
+                </div>
                 <span class="project-date">{{ project.created_at?.slice(0, 10) }}</span>
               </div>
               <p class="project-desc">{{ project.description || '暂无描述' }}</p>
 
-              <div class="project-commit">
-                <svg class="stat-icon" viewBox="0 0 1024 1024" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <path d="M557.481057 77.283019a431.335849 431.335849 0 1 1-294.873359 746.128906 34.062491 34.062491 0 1 1 46.58234-49.692982 363.230189 363.230189 0 1 0-114.93917-268.288l43.703547-43.587622a34.04317 34.04317 0 0 1 45.712906-2.221887l2.434415 2.202566a34.04317 34.04317 0 0 1 2.202566 45.751547l-2.202566 2.434415-80.277736 80.258415a56.745057 56.745057 0 0 1-77.611472 2.55034l-2.724226-2.56966-80.277736-80.258415a34.04317 34.04317 0 0 1 45.751547-50.369208l2.434415 2.202566 32.845283 32.845283A431.316528 431.316528 0 0 1 557.481057 77.283019z m-11.341283 181.615094a34.04317 34.04317 0 0 1 34.043169 34.04317v190.058264l134.742944 134.704302a34.04317 34.04317 0 0 1 2.337811 45.635623l-2.337811 2.588981a34.062491 34.062491 0 0 1-48.166642 0l-142.973585-142.973585a33.985208 33.985208 0 0 1-11.766339-25.735245V292.941283a34.04317 34.04317 0 0 1 34.04317-34.04317z" fill="currentColor"></path>
-                </svg>
-                <span v-if="project.last_commit_at">最近一次提交：{{ formatCommitTime(project.last_commit_at) }}</span>
-                <span v-else class="muted">暂无提交记录</span>
+              <div class="project-tags">
+                <span v-if="project.pending_commit_count" class="stat-tag tag-commit">
+                  <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M12 7.5V12l3 1.8"></path>
+                  </svg>
+                  {{ project.pending_commit_count }} 项待提交
+                </span>
+                <span v-if="project.pending_update_count" class="stat-tag tag-update">
+                  <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M8.5 13L12 9.5l3.5 3.5"></path>
+                  </svg>
+                  {{ project.pending_update_count }} 项待更新
+                </span>
+                <span class="stat-tag tag-link">
+                  <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M10 13a4 4 0 0 0 6 .4l2.5-2.5a4 4 0 0 0-5.7-5.7l-1.4 1.4"></path>
+                    <path d="M14 11a4 4 0 0 0-6-.4l-2.5 2.5a4 4 0 0 0 5.7 5.7l1.4-1.4"></path>
+                  </svg>
+                  关联 {{ project.skill_count }} 个 Skill
+                </span>
               </div>
 
               <div class="project-foot">
-                <div class="project-tags">
-                  <span v-if="project.pending_commit_count" class="stat-tag tag-commit">
-                    <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9"></circle>
-                      <path d="M12 7.5V12l3 1.8"></path>
-                    </svg>
-                    {{ project.pending_commit_count }} 项待提交
-                  </span>
-                  <span v-if="project.pending_update_count" class="stat-tag tag-update">
-                    <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9"></circle>
-                      <path d="M8.5 13L12 9.5l3.5 3.5"></path>
-                    </svg>
-                    {{ project.pending_update_count }} 项待更新
-                  </span>
-                  <span class="stat-tag tag-link">
-                    <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <path d="M10 13a4 4 0 0 0 6 .4l2.5-2.5a4 4 0 0 0-5.7-5.7l-1.4 1.4"></path>
-                      <path d="M14 11a4 4 0 0 0-6-.4l-2.5 2.5a4 4 0 0 0 5.7 5.7l1.4-1.4"></path>
-                    </svg>
-                    关联 {{ project.skill_count }} 个 Skill
-                  </span>
+                <div class="project-commit">
+                  <svg class="stat-icon" viewBox="0 0 1024 1024" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M557.481057 77.283019a431.335849 431.335849 0 1 1-294.873359 746.128906 34.062491 34.062491 0 1 1 46.58234-49.692982 363.230189 363.230189 0 1 0-114.93917-268.288l43.703547-43.587622a34.04317 34.04317 0 0 1 45.712906-2.221887l2.434415 2.202566a34.04317 34.04317 0 0 1 2.202566 45.751547l-2.202566 2.434415-80.277736 80.258415a56.745057 56.745057 0 0 1-77.611472 2.55034l-2.724226-2.56966-80.277736-80.258415a34.04317 34.04317 0 0 1 45.751547-50.369208l2.434415 2.202566 32.845283 32.845283A431.316528 431.316528 0 0 1 557.481057 77.283019z m-11.341283 181.615094a34.04317 34.04317 0 0 1 34.043169 34.04317v190.058264l134.742944 134.704302a34.04317 34.04317 0 0 1 2.337811 45.635623l-2.337811 2.588981a34.062491 34.062491 0 0 1-48.166642 0l-142.973585-142.973585a33.985208 33.985208 0 0 1-11.766339-25.735245V292.941283a34.04317 34.04317 0 0 1 34.04317-34.04317z" fill="currentColor"></path>
+                  </svg>
+                  <span v-if="project.last_commit_at">最近提交：{{ formatCommitTime(project.last_commit_at) }}</span>
+                  <span v-else class="muted">暂无提交记录</span>
                 </div>
               </div>
             </div>
@@ -751,7 +806,7 @@ watch(
                 <li v-for="h in historyItems" :key="h.id" class="history-item">
                   <div class="history-head">
                     <span class="history-skill">{{ h.skill_name }}</span>
-                    <span class="history-seq">v{{ h.seq }}</span>
+                    <span class="history-seq">v{{ versionNumberOf(h) }}</span>
                     <span class="history-source" :class="`src-${h.source}`">{{ sourceLabel(h.source) }}</span>
                   </div>
                   <div class="history-summary">{{ h.change_summary || '（无变更说明）' }}</div>
@@ -802,6 +857,48 @@ watch(
       </template>
     </BaseModal>
 
+    <!-- 编辑项目信息弹窗（入口位于项目卡片） -->
+    <BaseModal
+      v-model="showEditProject"
+      title="编辑项目信息"
+      :closable="!projectSaving"
+      :close-on-overlay="!projectSaving"
+    >
+      <div class="field">
+        <label>项目名称</label>
+        <input
+          v-model="editProjectName"
+          maxlength="128"
+          placeholder="输入项目名称"
+          @keyup.enter="saveProject"
+        />
+      </div>
+      <div class="field">
+        <label>项目描述</label>
+        <textarea
+          v-model="editProjectDescription"
+          rows="4"
+          placeholder="输入项目描述（可选）"
+        ></textarea>
+      </div>
+      <template #footer>
+        <button
+          class="btn-sm btn-cancel"
+          :disabled="projectSaving"
+          @click="showEditProject = false"
+        >
+          取消
+        </button>
+        <button
+          class="btn-sm btn-primary"
+          :disabled="projectSaving || !editProjectName.trim()"
+          @click="saveProject"
+        >
+          {{ projectSaving ? '保存中…' : '保存' }}
+        </button>
+      </template>
+    </BaseModal>
+
     <!-- 删除项目确认弹窗 -->
     <BaseModal
       v-model="showDeleteProject"
@@ -816,7 +913,7 @@ watch(
         该项目下的 Skill 关联、部署记录与动态将一并删除，且不可恢复。
       </p>
       <template #footer>
-        <button class="btn-sm" :disabled="deletingProject" @click="showDeleteProject = false">
+        <button class="btn-sm btn-cancel" :disabled="deletingProject" @click="showDeleteProject = false">
           取消
         </button>
         <button class="btn-sm btn-danger" :disabled="deletingProject" @click="confirmRemoveProject">
@@ -839,7 +936,7 @@ watch(
         该团队下的所有项目、团队 Skill 仓库、部署记录、动态与成员关系将一并删除，且不可恢复。各成员本地已部署的文件需自行清理。
       </p>
       <template #footer>
-        <button class="btn-sm" :disabled="dissolvingTeam" @click="showDissolveTeam = false">
+        <button class="btn-sm btn-cancel" :disabled="dissolvingTeam" @click="showDissolveTeam = false">
           取消
         </button>
         <button class="btn-sm btn-danger" :disabled="dissolvingTeam" @click="confirmRemoveTeam">
@@ -885,6 +982,10 @@ watch(
 .team-workspace {
   min-height: 100vh;
   background: var(--canvas);
+  --card-border: #d1d5db;
+  --card-border-hover: #151717;
+  --card-shadow: 0 1px 3px rgba(47, 51, 66, 0.06);
+  --card-shadow-hover: 0 8px 20px rgba(47, 51, 66, 0.1);
   color: #151717;
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
     Ubuntu, sans-serif;
@@ -961,6 +1062,7 @@ watch(
   background: transparent;
   color: #9ca3af;
   cursor: pointer;
+  transform: translateY(2px);
   transition: background 0.15s ease, color 0.15s ease;
 }
 .btn-icon-edit:hover { background: rgba(21, 23, 23, 0.06); color: #151717; }
@@ -1215,7 +1317,7 @@ watch(
   gap: 0.55rem;
   min-height: 180px;
   background: #ffffff;
-  border: 1px solid #ebedf0;
+  border: 2px solid var(--card-border);
   border-radius: 16px;
   padding: 1.25rem 1.3rem;
   cursor: pointer;
@@ -1223,7 +1325,7 @@ watch(
 }
 
 .project-card:hover {
-  border-color: #d1d5db;
+  border-color: var(--card-border-hover);
   box-shadow: 0 8px 24px rgba(21, 23, 23, 0.07);
   transform: translateY(-2px);
 }
@@ -1249,8 +1351,30 @@ watch(
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
+.project-edit {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(1px);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
 .project-card:hover .project-delete {
   opacity: 1;
+}
+
+.project-edit:hover {
+  background: #f3f4f6;
+  color: #151717;
 }
 
 .project-delete:hover {
@@ -1275,8 +1399,16 @@ watch(
   padding-right: 22px;
 }
 
-.project-title {
+.project-title-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex: 1;
+  min-width: 0;
+}
+
+.project-title {
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
   font-size: 0.98rem;
@@ -1301,7 +1433,7 @@ watch(
   min-height: 3.1em;
 }
 
-/* 最近一次提交行：时钟图标 + 时间，弱化为辅助信息 */
+/* 最近提交：位于卡片左下角，弱化为辅助信息 */
 .project-commit {
   display: flex;
   align-items: center;
@@ -1317,18 +1449,15 @@ watch(
   color: #b6bcc4;
 }
 
-/* 卡片底部：三个状态标签，贴底对齐（margin-top: auto），上方分隔线 */
+/* 卡片底部：最近提交贴左下角 */
 .project-foot {
   margin-top: auto;
-  padding-top: 0.7rem;
-  border-top: 1px solid #f3f4f6;
   display: flex;
   align-items: center;
 }
 
 .project-tags {
   display: flex;
-  /* 三个标签固定占一行，不换行（底部信息行恒为单行高度） */
   flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
@@ -1342,7 +1471,7 @@ watch(
   white-space: nowrap;
 }
 
-/* 三个状态小标签：柔和底色 + 同色文字（软标签，非按钮，不受纯色按钮规范约束） */
+/* 三个状态小标签统一使用低对比度灰色 */
 .stat-tag {
   display: inline-flex;
   align-items: center;
@@ -1350,28 +1479,26 @@ watch(
   padding: 3px 8px;
   border-radius: 999px;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1.4;
   white-space: nowrap;
+  background: #e5e7eb;
+  color: #6b7280;
 }
 
-.tag-commit {
-  background: #fff1e6;
-  color: #ea580c;
+.tag-commit .stat-icon {
+  color: #f97316;
 }
 
-.tag-update {
-  background: #efeafe;
-  color: #7c3aed;
+.tag-update .stat-icon {
+  color: #8b5cf6;
 }
 
-.tag-link {
-  background: #e7f8ee;
-  color: #16a34a;
+.tag-link .stat-icon {
+  color: #22c55e;
 }
 
-/* 三个图标统一为线性图标：同一 viewBox(0 0 24 24) + 同一线宽(stroke-width:2)，
-   保证尺寸与线条粗细完全一致；颜色随父级文字 currentColor */
+/* 三个图标统一为线性图标：同一 viewBox(0 0 24 24) + 同一线宽(stroke-width:2) */
 .stat-icon {
   flex-shrink: 0;
   display: block;
@@ -1451,6 +1578,7 @@ watch(
 }
 
 .skill-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
@@ -1458,17 +1586,42 @@ watch(
      描述长短（一行/两行）不再改变卡片高度 */
   min-height: 180px;
   padding: 1.25rem 1.3rem;
-  border: 1px solid #ebedf0;
+  border: 2px solid var(--card-border);
   border-radius: 16px;
   background: #ffffff;
+  box-shadow: var(--card-shadow);
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.skill-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: radial-gradient(
+    ellipse 145% 135% at 0% 100%,
+    color-mix(in srgb, var(--card-border-hover) 92%, transparent) 0%,
+    color-mix(in srgb, var(--card-border-hover) 50%, transparent) 38%,
+    color-mix(in srgb, var(--card-border-hover) 20%, transparent) 70%,
+    color-mix(in srgb, var(--card-border-hover) 7%, transparent) 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.skill-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .skill-card:hover {
-  border-color: #d1d5db;
-  box-shadow: 0 8px 24px rgba(21, 23, 23, 0.07);
-  transform: translateY(-2px);
+  border-color: transparent;
+  box-shadow: var(--card-shadow-hover);
+}
+
+.skill-card:hover::after {
+  opacity: 1;
 }
 
 .card-head {
@@ -1509,6 +1662,10 @@ watch(
   overflow: hidden;
   /* 始终预留两行高度（1.55 行高 × 2 行），描述一行时也占满，避免挤压卡片 */
   min-height: 3.1em;
+}
+
+.skill-card:hover .card-desc {
+  color: #ffffff;
 }
 
 .card-tags {
@@ -1810,16 +1967,24 @@ watch(
   color: #ffffff;
 }
 
+.btn-cancel {
+  border: none;
+  background: transparent;
+}
+
+.btn-cancel:hover {
+  background: #f6f7f8;
+}
+
 .btn-danger {
-  background: #ffffff;
-  border-color: #fecaca;
-  color: #dc2626;
+  border: none;
+  background: #dc2626;
+  color: #ffffff;
 }
 
 .btn-danger:hover {
-  background: #fef2f2;
-  border-color: #fca5a5;
-  color: #dc2626;
+  background: #b91c1c;
+  color: #ffffff;
 }
 
 .field {
@@ -1833,7 +1998,8 @@ watch(
   margin-bottom: 6px;
 }
 
-.field input {
+.field input,
+.field textarea {
   width: 100%;
   padding: 10px 12px;
   border: 2px solid #e5e7eb;
@@ -1847,7 +2013,13 @@ watch(
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.field input:focus {
+.field textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.field input:focus,
+.field textarea:focus {
   border-color: #151717;
   background: #ffffff;
 }

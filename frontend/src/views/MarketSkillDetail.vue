@@ -881,17 +881,23 @@ watch(marketId, () => {
 }
 .form-input {
   width: 100%;
-  padding: 0.55rem 0.75rem;
-  background: #ffffff;
-  border: 2px solid #e5e7eb;
+  padding: 0.68rem 0.85rem;
+  background: #eef0f3;
+  border: none;
   border-radius: 8px;
   color: #151717;
   font-size: 0.88rem;
   font-family: inherit;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
   box-sizing: border-box;
 }
 .form-input.textarea { resize: vertical; min-height: 80px; }
-.form-input.disabled { color: #374151; background: #f6f7f8; cursor: default; }
+.form-input:focus {
+  outline: none;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2px #151717;
+}
+.form-input.disabled { color: #374151; background: #eef0f3; cursor: default; }
 
 .meta-inline {
   display: flex;

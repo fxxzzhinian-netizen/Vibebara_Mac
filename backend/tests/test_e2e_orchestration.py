@@ -195,15 +195,18 @@ async def run_e2e(store_dir: str, project_dir: str) -> None:
 
         # --- 0b. 创建个人 skill（personal_skills），补资源后复制到团队仓库（team_skills），
         # 再把团队 skill 关联到项目（拆表后项目仅能关联团队仓库 Skill）---
-        await NativeSkillStore.create(
-            {"name": ids["skill_id"], "description": "e2e demo skill"},
+        personal_name = ids["skill_id"]
+        personal_skill = await NativeSkillStore.create(
+            {"name": personal_name, "description": "e2e demo skill"},
             vibeh_content="# e2e\n\n演示技能正文。\n",
             owner_id=ids["user_id"],
         )
-        skill_store = Path(store_dir) / "personal" / ids["skill_id"]
-        (skill_store / "scripts" / "run.py").write_bytes(b"print('e2e v1')\n")
+        ids["skill_id"] = personal_skill["id"]
+        store = NativeSkillStore._store()
+        prefix = personal_skill["store_path"]
+        store.put_bytes(prefix + "/scripts/run.py", b"print('e2e v1')\n")
         # 二进制资源：验证 base64 inline 忠实落盘
-        (skill_store / "assets" / "icon.png").write_bytes(bytes(range(256)) * 2)
+        store.put_bytes(prefix + "/assets/icon.png", bytes(range(256)) * 2)
         team_skill = await NativeSkillStore.copy_to_team(
             ids["skill_id"], ids["team_id"], ids["user_id"]
         )
@@ -226,11 +229,12 @@ async def run_e2e(store_dir: str, project_dir: str) -> None:
 
         status, w = agent_post("/local/write-skill", {
             "deployPath": project_dir, "scope": "project", "tool": "cursor",
-            "skillId": ids["team_skill_id"], "contents": art["contents"],
+            "skillId": art["skill_id"], "contents": art["contents"],
             "resources": art["resources"], "overwrite": True, "ensureGitignore": True,
         })
         assert status == 200 and w.get("ok"), (status, w)
         install_path = w["installPath"]
+        assert Path(install_path).name == personal_name
         installed_hash_1 = w["installedHash"]
 
         # 位级一致：云端读盘算 hash == 本地代理 write-skill 返回值
@@ -290,7 +294,7 @@ async def run_e2e(store_dir: str, project_dir: str) -> None:
 
         status, w2 = agent_post("/local/write-skill", {
             "deployPath": project_dir, "scope": "project", "tool": "cursor",
-            "skillId": ids["team_skill_id"], "contents": art2["contents"],
+            "skillId": art2["skill_id"], "contents": art2["contents"],
             "resources": art2["resources"], "overwrite": True, "ensureGitignore": True,
         })
         assert status == 200 and w2.get("ok"), (status, w2)

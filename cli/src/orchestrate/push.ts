@@ -7,6 +7,7 @@ import { collaborationContext } from "./context.js";
 export interface PushOptions extends DeploymentSelector {
   cloudApiBase?: string;
   createVersion?: boolean;
+  versionNumber?: string;
   versionLabel?: string;
 }
 
@@ -30,6 +31,7 @@ export async function pushSkill(
       currentHash: folder.dirHash,
       files: folder.files,
       createVersion: options.createVersion ?? false,
+      versionNumber: options.versionNumber ?? "",
       versionLabel: options.versionLabel ?? "",
     },
   );

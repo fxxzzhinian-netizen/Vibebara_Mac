@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_session_factory
 from app.models.market_listing import MarketListing
@@ -97,20 +98,25 @@ async def _publisher_names(rows: List[MarketListing]) -> Dict[str, str]:
     return {u.id: (u.display_name or u.username) for u in users}
 
 
-def _unique_personal_id(base: str, user_id: str) -> str:
-    """为「获取到个人仓库」生成全局唯一的新个人 Skill id（PersonalSkill.id 全局唯一）。"""
+async def _unique_personal_name(base: str, user_id: str) -> str:
+    """为当前用户生成未占用的自然名；不同用户可使用相同名称。"""
     base = NativeSkillStore._strip_team_suffix(base) or base
-    short = (user_id or "")[:8]
-    candidates = [base, f"{base}-{short}"] if short else [base]
-    for c in candidates:
-        if not NativeSkillStore._store_exists(NativeSkillStore._personal_prefix(c)):
-            return c
+    async with async_session_factory() as session:
+        names = set(
+            (
+                await session.execute(
+                    select(PersonalSkill.name).where(
+                        PersonalSkill.owner_id == user_id,
+                    )
+                )
+            ).scalars().all()
+        )
+    if base not in names:
+        return base
     i = 2
-    while True:
-        c = f"{base}-{short}-{i}" if short else f"{base}-{i}"
-        if not NativeSkillStore._store_exists(NativeSkillStore._personal_prefix(c)):
-            return c
+    while f"{base}-{i}" in names:
         i += 1
+    return f"{base}-{i}"
 
 
 async def _resolve_source_skill(
@@ -121,7 +127,7 @@ async def _resolve_source_skill(
     返回 (row, scope, prefix, source_team_id, user)。无权限抛 PermissionError，
     找不到抛 FileNotFoundError。
     """
-    prefix, scope = NativeSkillStore._resolve_prefix(skill_id)
+    prefix, scope = await NativeSkillStore._resolve_prefix(skill_id)
     if prefix is None:
         raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
@@ -141,7 +147,7 @@ async def _resolve_source_skill(
         if not await team_service.is_team_member(source_team_id, user_id):
             raise PermissionError("无权发布该团队 Skill（非团队成员）")
     else:
-        if row.owner_id and row.owner_id != user_id:
+        if row.owner_id != user_id:
             raise PermissionError("无权发布他人的个人 Skill")
 
     return row, scope, prefix, source_team_id, user
@@ -177,7 +183,7 @@ async def publish(skill_id: str, user_id: str) -> Dict[str, Any]:
         intro = src_config.get("intro") or {}
     except Exception:
         intro = {}
-    intro_title = (intro.get("title") or "").strip() or (row.display_name or skill_id)
+    intro_title = (intro.get("title") or "").strip() or (row.display_name or row.name)
     intro_author = (intro.get("author") or "").strip() or publisher_name
     intro_category = (intro.get("category") or "").strip()
     intro_md = (intro.get("md") or "").strip()
@@ -206,7 +212,7 @@ async def publish(skill_id: str, user_id: str) -> Dict[str, Any]:
             ms = MarketListing(
                 id=market_id,
                 store_path=market_prefix,
-                display_name=row.display_name or skill_id,
+                display_name=row.display_name or row.name,
                 description=row.description or "",
                 short_description=row.short_description or "",
                 version=row.version or "1.0.0",
@@ -285,7 +291,7 @@ async def publish(skill_id: str, user_id: str) -> Dict[str, Any]:
 
         # 3) 更新条目元数据 + 审核态。
         listing.store_path = market_prefix
-        listing.display_name = row.display_name or skill_id
+        listing.display_name = row.display_name or row.name
         listing.description = row.description or ""
         listing.short_description = row.short_description or ""
         listing.version = row.version or "1.0.0"
@@ -574,31 +580,48 @@ async def acquire(market_id: str, user_id: str) -> Dict[str, Any]:
     if ms.status != "approved":
         raise PermissionError("该 Skill 未通过审核，暂不可获取")
 
-    base = ms.source_skill_id or ms.id
-    new_id = _unique_personal_id(base, user_id)
-    new_prefix = NativeSkillStore._personal_prefix(new_id)
-
     store = NativeSkillStore._store()
-    store.copy_prefix(ms.store_path, new_prefix)
+    source_config = NativeSkillStore._read_store_config(ms.store_path)
+    base = str(source_config.get("name") or "market-skill")
+    # 唯一约束是并发下的最终裁决；若两次获取同时选中同一自然名，
+    # 失败者清理自己的 UUID 前缀后重新选名。
+    for attempt in range(3):
+        new_name = await _unique_personal_name(base, user_id)
+        new_id = str(uuid.uuid4())
+        new_prefix = NativeSkillStore._personal_prefix(user_id, new_id)
+        store.copy_prefix(ms.store_path, new_prefix)
 
-    config = NativeSkillStore._read_store_config(new_prefix)
-    display = (
-        ms.display_name
-        or config.get("ui", {}).get("display_name")
-        or config.get("display_name")
-        or NativeSkillStore._strip_team_suffix(base)
-    )
-    config["name"] = new_id
-    config.setdefault("ui", {})["display_name"] = display
-    config["scope"] = "personal"
-    config.pop("team_id", None)
-    config["source_skill_id"] = ms.id  # 溯源到市场条目（软引用，不同步）
-    NativeSkillStore._write_store_config(new_prefix, config)
+        config = NativeSkillStore._read_store_config(new_prefix)
+        display = (
+            ms.display_name
+            or config.get("ui", {}).get("display_name")
+            or config.get("display_name")
+            or new_name
+        )
+        config["name"] = new_name
+        config.setdefault("ui", {})["display_name"] = display
+        config["scope"] = "personal"
+        config.pop("team_id", None)
+        config["source_skill_id"] = ms.id  # 溯源到市场条目（软引用，不同步）
+        NativeSkillStore._write_store_config(new_prefix, config)
 
-    row = await NativeSkillStore._upsert_db(
-        new_id, config, new_prefix, owner_id=user_id
-    )
-    return NativeSkillStore._row_to_dict(row)
+        try:
+            row = await NativeSkillStore._upsert_db(
+                new_id,
+                config,
+                new_prefix,
+                owner_id=user_id,
+                name=new_name,
+            )
+            return NativeSkillStore._row_to_dict(row)
+        except IntegrityError as e:
+            store.delete_prefix(new_prefix)
+            if attempt == 2:
+                raise ValueError(
+                    "并发获取导致个人 Skill 名称持续冲突，请重试"
+                ) from e
+
+    raise RuntimeError("市场 Skill 获取失败")
 
 
 # =========================================================================

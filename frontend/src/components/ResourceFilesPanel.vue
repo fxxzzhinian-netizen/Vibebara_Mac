@@ -274,8 +274,8 @@ function fmtSize(n: number): string {
 }
 
 .rfp-tree {
-  background: #ffffff;
-  border: 1px solid #ebedf0;
+  background: #eef0f3;
+  border: none;
   border-radius: 12px;
   padding: 0.35rem 0.4rem;
 }
@@ -284,8 +284,8 @@ function fmtSize(n: number): string {
   padding: 0.9rem 1rem;
   font-size: 0.86rem;
   color: #9ca3af;
-  background: #ffffff;
-  border: 1px dashed #e5e7eb;
+  background: #eef0f3;
+  border: none;
   border-radius: 12px;
 }
 
@@ -341,8 +341,8 @@ function fmtSize(n: number): string {
   justify-content: center;
   align-items: center;
   padding: 0.5rem;
-  background: #f6f7f8;
-  border: 1px solid #ebedf0;
+  background: #eef0f3;
+  border: none;
   border-radius: 10px;
 }
 .rfp-preview img {
@@ -358,9 +358,9 @@ function fmtSize(n: number): string {
   box-sizing: border-box;
   resize: none;
   padding: 0.85rem 1rem;
-  border: 1px solid #e5e7eb;
+  border: none;
   border-radius: 10px;
-  background: #fbfbfc;
+  background: #eef0f3;
   color: #151717;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.88rem;
@@ -369,8 +369,8 @@ function fmtSize(n: number): string {
 }
 .rfp-editor:focus {
   outline: none;
-  border-color: #6366f1;
   background: #ffffff;
+  box-shadow: inset 0 0 0 2px #151717;
 }
 
 .rfp-foot-msg { font-size: 0.84rem; }

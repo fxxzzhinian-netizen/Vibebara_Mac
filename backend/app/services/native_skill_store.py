@@ -15,19 +15,20 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.models.project import UserSkillDeployment
 from app.models.skill_package import PersonalSkill, TeamSkill
 from app.models.team import TeamMember
-from app.models.user import User
 from app.services.skill_forge_service import call_bridge
 from app.services.skill_sync_service import SkillSyncService
 from app.services.team_sync_service import TeamSyncService
@@ -367,10 +368,10 @@ class NativeSkillStore:
 
     # ------------------------------------------------------------------
     # 对象存储路由辅助：个人/团队两张物理表 + 对象键前缀按仓库分层
-    #   personal: skills/personal/{id}/   (id=自然名)
+    #   personal: skills/personal/{owner_id}/{id}/   (id=内部 UUID)
     #   team:     skills/team/{id}/        (id={自然名}-team-{team_id[:8]})
     # 个人 id 与团队 id 天然不冲突，故 get/解析可「先个人再团队」。
-    # store_path（DB 列）= 对象键前缀（如 skills/personal/foo）。
+    # store_path（DB 列）= 对象键前缀（如 skills/personal/{owner_id}/{uuid}）。
     # ------------------------------------------------------------------
 
     @classmethod
@@ -379,28 +380,26 @@ class NativeSkillStore:
         return get_object_store()
 
     @staticmethod
-    def _personal_prefix(skill_id: str) -> str:
-        return f"skills/personal/{skill_id}"
+    def _personal_prefix(owner_id: str, skill_id: str) -> str:
+        if not owner_id:
+            raise ValueError("个人 Skill 缺少 owner_id")
+        return f"skills/personal/{owner_id}/{skill_id}"
 
     @staticmethod
     def _team_prefix(skill_id: str) -> str:
         return f"skills/team/{skill_id}"
 
     @classmethod
-    def _resolve_prefix(cls, skill_id: str) -> tuple:
-        """返回 (prefix, scope)；都不存在返回 (None, None)。"""
-        store = cls._store()
-        p = cls._personal_prefix(skill_id)
-        if store.exists(p + "/skill.config.yaml"):
-            return p, "personal"
-        t = cls._team_prefix(skill_id)
-        if store.exists(t + "/skill.config.yaml"):
-            return t, "team"
-        return None, None
-
-    @classmethod
-    def _prefix_for(cls, skill_id: str, scope: str) -> str:
-        return cls._team_prefix(skill_id) if scope == "team" else cls._personal_prefix(skill_id)
+    async def _resolve_prefix(cls, skill_id: str) -> tuple:
+        """按数据库内部 id 解析对象前缀，返回 (prefix, scope)。"""
+        async with async_session_factory() as session:
+            row, scope = await cls._get_row(session, skill_id)
+        if row is None or not row.store_path:
+            return None, None
+        prefix = row.store_path
+        if not cls._store_exists(prefix):
+            return None, None
+        return prefix, scope
 
     # ---- 对象存储读写（config / SKILL.md / 资源 / hash）----
 
@@ -492,14 +491,6 @@ class NativeSkillStore:
         store = cls._store()
         if settings.SKILL_STORE_SYNC_ON_START:
             await cls._sync_from_filesystem()
-        try:
-            migrated = await cls.migrate_orphan_owners()
-            if migrated:
-                logger.info(
-                    f"[NativeSkillStore] 已将 {migrated} 个无主个人 Skill 归属给首个用户"
-                )
-        except Exception as e:
-            logger.warning(f"[NativeSkillStore] 个人 Skill 归属迁移失败: {e}")
         logger.info(
             f"[NativeSkillStore] 初始化完成, backend={settings.STORAGE_BACKEND}"
         )
@@ -514,55 +505,96 @@ class NativeSkillStore:
         store = cls._store()
         found_personal: List[str] = []
         found_team: List[str] = []
+        personal_scan_complete = True
+        team_scan_complete = True
 
-        async def _scan(repo_root: str, scope: str) -> None:
+        try:
+            owner_ids = store.list_dirs("skills/personal")
+        except Exception as e:
+            logger.warning(f"[NativeSkillStore] 列举 skills/personal 失败: {e}")
+            owner_ids = []
+            personal_scan_complete = False
+        for owner_id in owner_ids:
+            owner_root = f"skills/personal/{owner_id}"
             try:
-                ids = store.list_dirs(repo_root)
+                skill_ids = store.list_dirs(owner_root)
             except Exception as e:
-                logger.warning(f"[NativeSkillStore] 列举 {repo_root} 失败: {e}")
-                return
-            for skill_id in ids:
-                prefix = f"{repo_root}/{skill_id}"
-                if not store.exists(prefix + "/skill.config.yaml"):
+                logger.warning(f"[NativeSkillStore] 列举 {owner_root} 失败: {e}")
+                personal_scan_complete = False
+                continue
+            for skill_id in skill_ids:
+                prefix = cls._personal_prefix(owner_id, skill_id)
+                if not cls._store_exists(prefix):
                     continue
                 try:
                     config = cls._read_store_config(prefix)
+                    name = str(config.get("name") or "").strip()
+                    if not name:
+                        raise ValueError("skill.config.yaml 缺少 name")
                     if "resources" not in config:
                         resources = cls._scan_store_resources(prefix)
                         if any(resources.values()):
                             config["resources"] = resources
                             cls._write_store_config(prefix, config)
-                    if scope == "team":
-                        found_team.append(skill_id)
-                        await cls._upsert_db(
-                            skill_id, config, prefix, scope="team",
-                            team_id=config.get("team_id"),
-                            source_skill_id=config.get("source_skill_id"),
-                            name=config.get("name") or cls._strip_team_suffix(skill_id),
-                        )
-                    else:
-                        found_personal.append(skill_id)
-                        await cls._upsert_db(skill_id, config, prefix, scope="personal")
+                    found_personal.append(skill_id)
+                    await cls._upsert_db(
+                        skill_id,
+                        config,
+                        prefix,
+                        scope="personal",
+                        owner_id=owner_id,
+                        name=name,
+                    )
                 except Exception as e:
-                    logger.warning(f"[NativeSkillStore] 跳过 {scope}/{skill_id}: {e}")
+                    logger.warning(f"[NativeSkillStore] 跳过 personal/{owner_id}/{skill_id}: {e}")
 
-        await _scan("skills/personal", "personal")
-        await _scan("skills/team", "team")
+        try:
+            team_ids = store.list_dirs("skills/team")
+        except Exception as e:
+            logger.warning(f"[NativeSkillStore] 列举 skills/team 失败: {e}")
+            team_ids = []
+            team_scan_complete = False
+        for skill_id in team_ids:
+            prefix = cls._team_prefix(skill_id)
+            if not cls._store_exists(prefix):
+                continue
+            try:
+                config = cls._read_store_config(prefix)
+                if "resources" not in config:
+                    resources = cls._scan_store_resources(prefix)
+                    if any(resources.values()):
+                        config["resources"] = resources
+                        cls._write_store_config(prefix, config)
+                found_team.append(skill_id)
+                await cls._upsert_db(
+                    skill_id,
+                    config,
+                    prefix,
+                    scope="team",
+                    team_id=config.get("team_id"),
+                    source_skill_id=config.get("source_skill_id"),
+                    name=config.get("name") or cls._strip_team_suffix(skill_id),
+                )
+            except Exception as e:
+                logger.warning(f"[NativeSkillStore] 跳过 team/{skill_id}: {e}")
 
         # 按表分别删除 DB 中已不存在于对象存储的记录
         async with async_session_factory() as session:
-            if found_personal:
-                await session.execute(
-                    delete(PersonalSkill).where(PersonalSkill.id.notin_(found_personal))
-                )
-            else:
-                await session.execute(delete(PersonalSkill))
-            if found_team:
-                await session.execute(
-                    delete(TeamSkill).where(TeamSkill.id.notin_(found_team))
-                )
-            else:
-                await session.execute(delete(TeamSkill))
+            # 任一层级列举失败时不做裁剪，避免 COS 瞬时故障误删数据库索引。
+            if personal_scan_complete:
+                if found_personal:
+                    await session.execute(
+                        delete(PersonalSkill).where(PersonalSkill.id.notin_(found_personal))
+                    )
+                else:
+                    await session.execute(delete(PersonalSkill))
+            if team_scan_complete:
+                if found_team:
+                    await session.execute(
+                        delete(TeamSkill).where(TeamSkill.id.notin_(found_team))
+                    )
+                else:
+                    await session.execute(delete(TeamSkill))
             await session.commit()
 
     # ------------------------------------------------------------------
@@ -610,11 +642,15 @@ class NativeSkillStore:
                 if row is None:
                     row = PersonalSkill(
                         id=skill_id,
+                        name=name or config.get("name") or "",
+                        owner_id=owner_id or "",
                         store_path=store_path,
                         created_at=datetime.now(timezone.utc),
                     )
                     session.add(row)
-                if owner_id and not row.owner_id:
+                if name:
+                    row.name = name
+                if owner_id:
                     row.owner_id = owner_id
 
             row.display_name = (
@@ -650,29 +686,30 @@ class NativeSkillStore:
             #     前端用其展示（详见 M4-收尾与联调记录）。此处**不据后端盘设置**，
             #     保留字段兼容（新行默认 False，存量值不被后端盘探测覆盖）。
             if settings.DEPLOYMENT_MODE != "cloud":
+                install_name = row.name
                 row.deployed_cursor = (
-                    CURSOR_SKILLS_DIR / skill_id / "SKILL.md"
+                    CURSOR_SKILLS_DIR / install_name / "SKILL.md"
                 ).exists()
                 row.deployed_codex = (
-                    CODEX_SKILLS_DIR / skill_id / "SKILL.md"
+                    CODEX_SKILLS_DIR / install_name / "SKILL.md"
                 ).exists()
                 row.deployed_windsurf = (
-                    WINDSURF_SKILLS_DIR / skill_id / "SKILL.md"
+                    WINDSURF_SKILLS_DIR / install_name / "SKILL.md"
                 ).exists()
                 row.deployed_claude = (
-                    CLAUDE_SKILLS_DIR / skill_id / "SKILL.md"
+                    CLAUDE_SKILLS_DIR / install_name / "SKILL.md"
                 ).exists()
                 row.deployed_kiro = (
-                    KIRO_SKILLS_DIR / skill_id / "SKILL.md"
+                    KIRO_SKILLS_DIR / install_name / "SKILL.md"
                 ).exists()
                 row.deployed_trae = (
-                    trae_skills_dir() / skill_id / "SKILL.md"
+                    trae_skills_dir() / install_name / "SKILL.md"
                 ).exists()
                 row.deployed_qoder = (
-                    qoder_skills_dir() / skill_id / "SKILL.md"
+                    qoder_skills_dir() / install_name / "SKILL.md"
                 ).exists()
                 row.deployed_workbuddy = (
-                    workbuddy_skills_dir() / skill_id / "SKILL.md"
+                    workbuddy_skills_dir() / install_name / "SKILL.md"
                 ).exists()
             else:
                 if row.deployed_cursor is None:
@@ -739,7 +776,7 @@ class NativeSkillStore:
             if not await cls._row_accessible(session, row, user_id):
                 return None
 
-        prefix, scope = cls._resolve_prefix(skill_id)
+        prefix, scope = await cls._resolve_prefix(skill_id)
         if prefix is None:
             return None
         config = cls._read_store_config(prefix)
@@ -759,7 +796,6 @@ class NativeSkillStore:
             "store_path": prefix,
             "db": cls._row_to_dict(row) if row else None,
         }
-
     # ------------------------------------------------------------------
     # 单个资源文件读写（scripts/references/assets/**）—— 供网页文件树编辑器使用。
     # 直接对对象存储（COS / 本地）按 {prefix}/{rel} 读写单个文件字节。
@@ -792,7 +828,7 @@ class NativeSkillStore:
             if not await cls._row_accessible(session, row, user_id):
                 raise PermissionError("Skill 不存在或无权访问")
 
-        prefix, _scope = cls._resolve_prefix(skill_id)
+        prefix, _scope = await cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
@@ -834,7 +870,7 @@ class NativeSkillStore:
             if not await cls._row_accessible(session, row, user_id):
                 raise PermissionError("Skill 不存在或无权修改")
 
-        prefix, scope = cls._resolve_prefix(skill_id)
+        prefix, scope = await cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
@@ -868,7 +904,7 @@ class NativeSkillStore:
         except Exception as e:  # 同步通知失败不阻断保存
             logger.warning(f"[write_resource_file] 同步通知失败 skill='{skill_id}': {e}")
 
-        if is_team:
+        if row_scope == "team":
             try:
                 from app.services.project_service import mark_skill_deployments_outdated
 
@@ -910,11 +946,21 @@ class NativeSkillStore:
         cls, config: Dict[str, Any], vibeh_content: Optional[str] = None,
         owner_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        skill_id: str = config["name"]
-        prefix = cls._personal_prefix(skill_id)
+        if not owner_id:
+            raise ValueError("创建个人 Skill 必须提供 owner_id")
+        skill_name = str(config["name"]).strip()
+        async with async_session_factory() as session:
+            existing = await session.scalar(
+                select(PersonalSkill.id).where(
+                    PersonalSkill.owner_id == owner_id,
+                    PersonalSkill.name == skill_name,
+                )
+            )
+        if existing:
+            raise ValueError(f"Skill '{skill_name}' already exists")
 
-        if cls._store_exists(prefix):
-            raise ValueError(f"Skill '{skill_id}' already exists")
+        skill_id = str(uuid.uuid4())
+        prefix = cls._personal_prefix(owner_id, skill_id)
 
         now = _now_iso()
 
@@ -934,21 +980,32 @@ class NativeSkillStore:
         })
 
         if not body:
-            body = f"# {skill_id}\n\n在此编写 Skill 指令。\n"
+            body = f"# {skill_name}\n\n在此编写 Skill 指令。\n"
 
         # LLM 自动分类标签（best-effort；tags 为空时才生成，失败不阻断创建）。
         await cls._apply_auto_tags(config, body)
 
-        # 对象存储无空目录概念，scripts/references/assets 待有文件时自然出现。
-        cls._write_store_config(prefix, config)
-
-        cls._write_store_vibeh(prefix, body)
-
-        row = await cls._upsert_db(skill_id, config, prefix, owner_id=owner_id)
+        try:
+            # 对象存储无空目录概念，scripts/references/assets 待有文件时自然出现。
+            cls._write_store_config(prefix, config)
+            cls._write_store_vibeh(prefix, body)
+            row = await cls._upsert_db(
+                skill_id,
+                config,
+                prefix,
+                owner_id=owner_id,
+                name=skill_name,
+            )
+        except IntegrityError as e:
+            cls._store().delete_prefix(prefix)
+            raise ValueError(f"Skill '{skill_name}' already exists") from e
+        except Exception:
+            cls._store().delete_prefix(prefix)
+            raise
 
         await SkillSyncService.on_skill_changed(
             skill_id=skill_id,
-            user_id=config.get("_sync_user_id", "system"),
+            user_id=owner_id,
             action="created",
         )
 
@@ -960,9 +1017,10 @@ class NativeSkillStore:
         vibeh_content: Optional[str] = None,
         user_id: Optional[str] = None,
         create_version: bool = False,
+        version_number: str = "",
         version_label: str = "",
     ) -> Dict[str, Any]:
-        prefix, scope = cls._resolve_prefix(skill_id)
+        prefix, scope = await cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
@@ -996,6 +1054,8 @@ class NativeSkillStore:
             partial.pop("instructions")
 
         for key, val in partial.items():
+            if key == "name":
+                continue
             if key in ("ui", "policy", "metadata", "dependencies", "resources", "_import_meta", "meta"):
                 config.setdefault(key, {})
                 if isinstance(val, dict):
@@ -1010,6 +1070,8 @@ class NativeSkillStore:
                 _merge_block(config[key], val)
             else:
                 config[key] = val
+        if row is not None:
+            config["name"] = row.name
 
         new_vibeh = vibeh_content if vibeh_content is not None else old_vibeh
 
@@ -1042,6 +1104,15 @@ class NativeSkillStore:
             if diff_summary == "无改动":
                 # 改动落在未列入展示白名单的字段（如资源清单），仍记一条概要动态。
                 diff_summary = "更新了 Skill 内容"
+
+        resolved_version_number = ""
+        if create_version:
+            from app.services.skill_version_service import SkillVersionService
+
+            resolved_version_number = await SkillVersionService.resolve_version_number(
+                skill_id,
+                version_number,
+            )
 
         cls._write_store_config(prefix, config)
 
@@ -1078,10 +1149,13 @@ class NativeSkillStore:
                     skill_id,
                     created_by=editor_id,
                     source="web_edit",
+                    version_number=resolved_version_number,
                     label=version_label or "",
                     change_summary=diff_summary,
                     change_items=change_items,
                 )
+            except ValueError:
+                raise
             except Exception as e:
                 logger.warning(f"[update] 创建版本快照失败 skill='{skill_id}': {e}")
 
@@ -1130,7 +1204,7 @@ class NativeSkillStore:
             action="deleted",
         )
 
-        prefix, _ = cls._resolve_prefix(skill_id)
+        prefix, _ = await cls._resolve_prefix(skill_id)
         if prefix:
             cls._store().delete_prefix(prefix)
 
@@ -1302,36 +1376,34 @@ class NativeSkillStore:
         # 拆表路由：allow_team_update ⟹ 写团队表（target_skill_id 即团队代理 id）；
         # 否则写个人表。团队在独立表，个人导入永远不会与团队同名冲突。
         scope = "team" if allow_team_update else "personal"
+        new_personal = False
 
         if scope == "team":
             if not target_skill_id:
                 raise ValueError("团队写回必须提供 target_skill_id")
             skill_id = target_skill_id
-            config["name"] = target_skill_id
+            config["name"] = team_name or config.get("name") or target_skill_id
             prefix = cls._team_prefix(skill_id)
         else:
-            skill_id = config["name"]
-            # 个人导入仅与「他人已占用的同名个人 Skill」冲突 → 分配新 id 作独立快照。
+            if not owner_id:
+                raise ValueError("导入个人 Skill 必须提供 owner_id")
+            skill_name = str(config["name"]).strip()
             async with async_session_factory() as session:
-                existing = await session.get(PersonalSkill, skill_id)
-                if (
-                    existing and existing.owner_id and owner_id
-                    and existing.owner_id != owner_id
-                ):
-                    base = skill_id
-                    candidate = base
-                    n = 1
-                    while (
-                        await session.get(PersonalSkill, candidate) is not None
-                        or cls._store_exists(cls._personal_prefix(candidate))
-                    ):
-                        n += 1
-                        candidate = f"{base}-{n}"
-                    if not config.get("ui", {}).get("display_name"):
-                        config.setdefault("ui", {})["display_name"] = base
-                    config["name"] = candidate
-                    skill_id = candidate
-            prefix = cls._personal_prefix(skill_id)
+                existing = (
+                    await session.execute(
+                        select(PersonalSkill).where(
+                            PersonalSkill.owner_id == owner_id,
+                            PersonalSkill.name == skill_name,
+                        )
+                    )
+                ).scalar_one_or_none()
+            if existing is not None:
+                skill_id = existing.id
+                prefix = existing.store_path
+            else:
+                skill_id = str(uuid.uuid4())
+                prefix = cls._personal_prefix(owner_id, skill_id)
+                new_personal = True
 
         # 覆盖语义：先清空目标前缀，再写入。
         cls._store().delete_prefix(prefix)
@@ -1364,9 +1436,19 @@ class NativeSkillStore:
                 team_id=team_id, name=team_name,
             )
         else:
-            row = await cls._upsert_db(
-                skill_id, config, prefix, scope="personal", owner_id=owner_id
-            )
+            try:
+                row = await cls._upsert_db(
+                    skill_id,
+                    config,
+                    prefix,
+                    scope="personal",
+                    owner_id=owner_id,
+                    name=skill_name,
+                )
+            except IntegrityError as e:
+                if new_personal:
+                    cls._store().delete_prefix(prefix)
+                raise ValueError(f"Skill '{skill_name}' already exists") from e
         return cls._row_to_dict(row)
 
     # ------------------------------------------------------------------
@@ -1422,18 +1504,17 @@ class NativeSkillStore:
 
         新记录使用独立 id（带团队后缀），并通过 source_skill_id 溯源到原个人 skill。
         """
-        src_prefix = cls._personal_prefix(skill_id)
-        if not cls._store_exists(src_prefix):
-            raise FileNotFoundError(f"Skill '{skill_id}' not found")
-
         async with async_session_factory() as session:
             src = await session.get(PersonalSkill, skill_id)
         if src is None:
             raise PermissionError("只能将个人 Skill 放入团队仓库")
-        if src.owner_id and src.owner_id != user_id:
+        if src.owner_id != user_id:
             raise PermissionError("无权操作他人的个人 Skill")
+        src_prefix = src.store_path
+        if not cls._store_exists(src_prefix):
+            raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
-        new_id = f"{skill_id}-team-{team_id[:8]}"
+        new_id = f"{src.name}-team-{team_id[:8]}"
         new_prefix = cls._team_prefix(new_id)
         if cls._store_exists(new_prefix):
             raise ValueError("该 Skill 已放入该团队仓库")
@@ -1446,9 +1527,9 @@ class NativeSkillStore:
             config.get("ui", {}).get("display_name")
             or config.get("display_name")
             or src.display_name
-            or skill_id
+            or src.name
         )
-        config["name"] = new_id
+        config["name"] = src.name
         config.setdefault("ui", {})["display_name"] = orig_display
         config["scope"] = "team"
         config["team_id"] = team_id
@@ -1457,7 +1538,7 @@ class NativeSkillStore:
 
         await cls._upsert_db(
             new_id, config, new_prefix, scope="team",
-            team_id=team_id, source_skill_id=skill_id, name=skill_id,
+            team_id=team_id, source_skill_id=skill_id, name=src.name,
         )
 
         async with async_session_factory() as session:
@@ -1541,7 +1622,7 @@ class NativeSkillStore:
         调用 LLM 为 skill 的缺失字段生成建议值。
         返回 { incomplete_fields, suggestions }，不自动写入——需用户确认。
         """
-        prefix, _ = cls._resolve_prefix(skill_id)
+        prefix, _ = await cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
@@ -1571,7 +1652,7 @@ class NativeSkillStore:
         force=False（默认）仅在 tags 为空时生成，便于存量回填；force=True 强制重生成。
         返回最终标签列表。供回填脚本与手动重生成端点复用。
         """
-        prefix, scope = cls._resolve_prefix(skill_id)
+        prefix, scope = await cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
@@ -1591,7 +1672,7 @@ class NativeSkillStore:
     @classmethod
     async def _get_ts_yaml(cls, skill_id: str) -> str:
         """读取 config + SKILL.md，转换为 TS bridge 期望的 YAML 格式"""
-        prefix, _ = cls._resolve_prefix(skill_id)
+        prefix, _ = await cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
@@ -1626,12 +1707,14 @@ class NativeSkillStore:
         dest_path 为空时部署到平台目录（~/.cursor/skills 或 ~/.codex/skills）,
         非空时部署到用户指定的项目目录。
         """
-        prefix, scope = cls._resolve_prefix(skill_id)
+        prefix, scope = await cls._resolve_prefix(skill_id)
         if prefix is None:
             raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
         async with async_session_factory() as session:
             row, _ = await cls._get_row(session, skill_id)
+            if row is None:
+                raise FileNotFoundError(f"Skill '{skill_id}' not found")
             if scope == "team" and not allow_team:
                 raise PermissionError(
                     "Team repository skills must be deployed from a project"
@@ -1641,6 +1724,7 @@ class NativeSkillStore:
                 and row.owner_id and row.owner_id != user_id
             ):
                 raise PermissionError("无权部署他人的个人 Skill")
+            install_name = row.name
 
         yaml_content = await cls._get_ts_yaml(skill_id)
 
@@ -1693,7 +1777,7 @@ class NativeSkillStore:
             else:
                 dest_root = CODEX_SKILLS_DIR
 
-            dest_dir = dest_root / skill_id
+            dest_dir = dest_root / install_name
             if dest_dir.exists():
                 shutil.rmtree(dest_dir)
             dest_dir.mkdir(parents=True, exist_ok=True)
@@ -1753,7 +1837,7 @@ class NativeSkillStore:
         is_team = isinstance(row, TeamSkill)
         return {
             "id": row.id,
-            "name": row.name if is_team else row.id,
+            "name": row.name,
             "display_name": row.display_name,
             "description": row.description,
             "short_description": row.short_description,
@@ -1777,22 +1861,3 @@ class NativeSkillStore:
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
-
-    @classmethod
-    async def migrate_orphan_owners(cls) -> int:
-        """将无主的个人 Skill 归属给系统首个用户（按 created_at 最早）。"""
-        async with async_session_factory() as session:
-            first_user_id = (
-                await session.execute(
-                    select(User.id).order_by(User.created_at).limit(1)
-                )
-            ).scalar_one_or_none()
-            if not first_user_id:
-                return 0
-            result = await session.execute(
-                update(PersonalSkill)
-                .where(PersonalSkill.owner_id.is_(None))
-                .values(owner_id=first_user_id)
-            )
-            await session.commit()
-            return int(result.rowcount or 0)

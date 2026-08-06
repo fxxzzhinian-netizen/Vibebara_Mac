@@ -597,7 +597,7 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
 }
 
-/* 选中态白色胶囊滑块：绝对定位于分选项之下，随选中项平滑滑动 + 变宽。 */
+/* 选中态黑色胶囊滑块：绝对定位于分选项之下，随选中项平滑滑动 + 变宽。 */
 .nav-slider {
   position: absolute;
   top: 0;
@@ -605,12 +605,20 @@ onBeforeUnmount(() => {
   left: 0;
   width: 0;
   border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(21, 23, 23, 0.1), 0 0 0 1px rgba(21, 23, 23, 0.04);
+  background: #151717;
+  box-shadow: 0 1px 3px rgba(21, 23, 23, 0.18);
   opacity: 0;
   z-index: 0;
   pointer-events: none;
   will-change: transform, width;
+}
+
+.nav-slider::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: inherit;
 }
 
 .nav-slider.ready {
@@ -624,10 +632,10 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* 胶囊整体在原基础上缩小 20%（宽度/内边距/字号同比 ×0.8） */
+  /* 保持紧凑宽度，并增加竖向留白以强化激活背景。 */
   width: 120px;
   box-sizing: border-box;
-  padding: 0.6rem 0.84rem;
+  padding: 0.72rem 0.84rem;
   border: none;
   border-radius: 999px;
   background: transparent;
@@ -649,9 +657,9 @@ onBeforeUnmount(() => {
   background: rgba(21, 23, 23, 0.05);
 }
 
-/* 选中项：文字加深加粗；白色胶囊底由 .nav-slider 提供（可滑动） */
+/* 选中项：白色加粗文字；黑色胶囊底由 .nav-slider 提供（可滑动） */
 .nav-item.active {
-  color: #202124;
+  color: #ffffff;
   font-weight: 600;
 }
 

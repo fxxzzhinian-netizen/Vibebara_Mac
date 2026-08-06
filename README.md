@@ -81,8 +81,8 @@ curl http://localhost:8000/health       # {"status":"healthy",...}
 ### 2. 本机：启动桌面壳（PowerShell，连云端后端）
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
 .\build-desktop.ps1 -Quick -NoBe
 ```
 
@@ -184,6 +184,13 @@ docker compose exec backend python scripts/generate_invites.py --disable VH-8K2M
 - `GET /api/v1/invites` — 列出全部码及使用状况
 - `POST /api/v1/invites/{code}/disable` — 吊销
 
+**服务端签发逻辑：**
+
+- 注册邀请码的生成、校验消费、查询和吊销逻辑位于 `backend/app/services/invite_service.py`，数据持久化到 MySQL 的 `invite_codes` 表。
+- 服务器运维脚本为 `backend/scripts/generate_invites.py`；管理员接口位于 `backend/app/api/invites.py`，且已挂载到 `/api/v1/invites`。
+- 登录/注册使用的滑块验证码由 `backend/app/services/captcha_service.py` 生成；`GET /api/v1/auth/captcha` 签发挑战，`POST /api/v1/auth/captcha/verify` 校验成功后签发一次性 `captcha_token`。
+- 滑块挑战有效期为 2 分钟，验证 token 有效期为 5 分钟，均为一次性并存放在后端进程内存中，因此生产环境须保持单进程运行。
+
 **相关配置（环境变量 / `.env`）：**
 
 - `INVITE_CODE_REQUIRED`（默认 `true`）— 设为 `false` 可放开注册（本地开发用）
@@ -245,8 +252,8 @@ docker compose build --build-arg APT_MIRROR=mirrors.aliyun.com backend
 云端后端已在服务器部署后，开发者本机只需指定服务器地址：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
 .\build-desktop.ps1 -NoBe     # 不启动本地后端，直连云端
 ```
 
@@ -319,8 +326,8 @@ cd ..
 - **环境变量**（联调优先级最高）：
 
 ```powershell
-$env:VIBEBARA_CLOUD_API_BASE = "http://43.136.128.162:8000/api/v1"
-$env:VIBEBARA_CLOUD_WS_BASE  = "ws://43.136.128.162:8000"
+$env:VIBEBARA_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
+$env:VIBEBARA_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
 $env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 ```
 
@@ -328,8 +335,8 @@ $env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 
 ```json
 {
-  "cloudApiBase": "http://43.136.128.162:8000/api/v1",
-  "cloudWsBase": "ws://43.136.128.162:8000",
+  "cloudApiBase": "http://162.14.106.190:8000/api/v1",
+  "cloudWsBase": "ws://162.14.106.190:8000",
   "updateUrl": "https://你的更新域名/desktop/"
 }
 ```
