@@ -44,7 +44,7 @@ export const useSkillStore = defineStore('skill-store', () => {
 
   /** 某 Skill 是否已装到本机 cursor/codex/windsurf/claude/kiro/trae/qoder/workbuddy：编排形态优先本地代理 scan 结果，否则回退云端字段。 */
   function installedStatus(skill: NativeSkillItem): InstalledAtStatus {
-    const local = platformInstalled.value[skill.id]
+    const local = platformInstalled.value[skill.name]
     if (isOrchestrationEnabled() && local) return local
     return {
       cursor: skill.deployed_cursor,

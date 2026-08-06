@@ -94,13 +94,13 @@ const ideScanLoading = ref(false)
 const ideScanned = ref(false)
 const ideGroups = ref<IdeSkillGroup[]>([])
 const selectedIdePaths = ref<string[]>([])
-// 个人仓库已有 id 集合：用于标记「已存在」并默认不勾选（勾选 = 覆盖，不勾选 = 跳过）。
-const personalIdSet = ref<Set<string>>(new Set())
+// 当前用户个人仓库已有自然名集合：用于标记「已存在」并默认不勾选。
+const personalNameSet = ref<Set<string>>(new Set())
 const ideAllPaths = computed(() =>
   ideGroups.value.flatMap((g) => g.packages.map((p) => p.source_path)),
 )
 function existsInPersonal(p: UnifiedSkillPackage): boolean {
-  return personalIdSet.value.has(p.id)
+  return personalNameSet.value.has(p.id)
 }
 
 const addSkillLoading = ref(false)
@@ -132,7 +132,7 @@ function resetIdeScan() {
   ideScanLoading.value = false
   ideGroups.value = []
   selectedIdePaths.value = []
-  personalIdSet.value = new Set()
+  personalNameSet.value = new Set()
 }
 
 function resetAll() {
@@ -235,7 +235,7 @@ async function confirmAddFromPersonal() {
         okCount += 1
         if (res.skill) imported.push(res.skill)
       } else {
-        failed.push(`${s?.display_name || s?.id || id}：${res.error || '失败'}`)
+        failed.push(`${s?.display_name || s?.name || s?.id || id}：${res.error || '失败'}`)
       }
     }
     if (failed.length) {
@@ -416,12 +416,12 @@ async function scanIde() {
   ideGroups.value = []
   selectedIdePaths.value = []
   try {
-    // 先取个人仓库已有 id，用于标记「已存在」并默认跳过（避免误覆盖）。
+    // 先取当前用户个人仓库已有自然名，用于标记「已存在」并默认跳过。
     try {
       const pres = await listNativeSkills('personal')
-      personalIdSet.value = new Set(pres.success ? pres.skills.map((s) => s.id) : [])
+      personalNameSet.value = new Set(pres.success ? pres.skills.map((s) => s.name) : [])
     } catch {
-      personalIdSet.value = new Set()
+      personalNameSet.value = new Set()
     }
     const res = await scanIdeGlobalSkills()
     ideScanned.value = true
@@ -542,7 +542,7 @@ async function confirmAddFromIde() {
                 v-model="selectedPersonalIds"
               />
               <span class="pi-main">
-                <span class="pi-name">{{ s.display_name || s.id }}</span>
+                <span class="pi-name">{{ s.display_name || s.name || s.id }}</span>
                 <span class="pi-desc">{{ s.description || '暂无描述' }}</span>
               </span>
             </label>

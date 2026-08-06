@@ -39,7 +39,7 @@ interface ToolForm {
 const DUAL_FORM_TOOLS: Partial<Record<DeployTool, { cli: ToolForm; app: ToolForm }>> = {
   codex: {
     cli: { tool: 'codex-cli', label: '命令行 (CLI)', description: '打开新终端并定位到部署目录' },
-    app: { tool: 'codex-app', label: '桌面端 App', description: '启动 Codex 桌面应用' },
+    app: { tool: 'codex-app', label: 'ChatGPT 客户端', description: '启动内含 Codex 的 ChatGPT 桌面应用' },
   },
   claude: {
     cli: { tool: 'claude-code', label: '命令行 (CLI)', description: '打开新终端并定位到部署目录' },

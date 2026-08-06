@@ -127,12 +127,14 @@ export function createProgram(): Command {
     program.command("push").description("push local skill changes"),
   )
     .option("--create-version", "create a version snapshot after push")
+    .option("--version-number <version>", "display version number, for example 1.2")
     .option("--version-label <label>", "optional version label")
     .action(
       async (
         target: string | undefined,
         options: SelectorOptions & {
           createVersion?: boolean;
+          versionNumber?: string;
           versionLabel?: string;
         },
       ) => {

@@ -3,11 +3,11 @@
 后端不再直接用 `Path` 操作本地 store 目录，而是面向「对象键 / 前缀」读写：
 
 - `STORAGE_BACKEND=local`（开发默认）：`LocalObjectStore`，键映射到 `COWORK_DATA_DIR`
-  下的文件系统，落地布局与历史一致（`skills/personal/{id}/...`、`skill_versions/...`）。
+  下的文件系统（`skills/personal/{owner_id}/{id}/...`、`skill_versions/...`）。
 - `STORAGE_BACKEND=cos`（生产）：`CosObjectStore`，用 cos-python-sdk-v5 读写腾讯云 COS。
 
 键约定（逻辑键，不含 COS_PREFIX）：
-  skills/personal/{id}/skill.config.yaml | SKILL.md | scripts/** | references/** | assets/** | LICENSE
+  skills/personal/{owner_id}/{id}/skill.config.yaml | SKILL.md | scripts/** | references/** | assets/** | LICENSE
   skills/team/{id}/...
   skill_versions/{skill_id}/{version_id}/scripts|references|assets/**
 
@@ -282,7 +282,7 @@ class CosObjectStore(ObjectStore):
         res = self._list_full(full_prefix, delimiter="/")
         names: List[str] = []
         for d in res["dirs"]:
-            logical = self._strip(d)  # e.g. skills/personal/foo/
+            logical = self._strip(d)  # e.g. skills/personal/{owner_id}/
             name = logical[len(base):].rstrip("/")
             if name and not name.startswith("."):
                 names.append(name)

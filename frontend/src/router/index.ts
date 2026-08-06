@@ -89,8 +89,8 @@ router.beforeEach(async (to, _from, next) => {
     }
     const onboarded = auth.user?.onboarded
     if (to.path === '/onboarding') {
-      // 已完成引导默认回主页；dev 模式下放行以便调试引导页 UI
-      if (onboarded && !import.meta.env.DEV) return next('/')
+      // 已完成引导统一回主页，刷新时不再重复进入初始引导页。
+      if (onboarded) return next('/')
       return next()
     }
     // 未完成引导 → 强制进入引导（user 取不到时不阻断，安全放行）

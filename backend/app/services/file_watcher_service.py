@@ -124,19 +124,16 @@ class FileWatcherService:
     def _extract_skill_id(cls, file_path: Path) -> Optional[str]:
         """从文件路径中提取 skill_id。
 
-        拆表后 store 目录按仓库分层：`personal/{id}/...` 或 `team/{id}/...`，
-        故命名空间下 id 在 parts[1]；兼容旧扁平布局 `{id}/...`（id 在 parts[0]）。
+        目录布局为 `personal/{owner_id}/{id}/...` 或 `team/{id}/...`。
         """
         try:
             store = Path(cls._store_dir)
             rel = file_path.relative_to(store)
             parts = rel.parts
-            if parts and parts[0] in ("personal", "team"):
-                if len(parts) >= 3:
-                    return parts[1]
-                return None
-            if len(parts) >= 2:
-                return parts[0]
+            if parts and parts[0] == "personal":
+                return parts[2] if len(parts) >= 4 else None
+            if parts and parts[0] == "team":
+                return parts[1] if len(parts) >= 3 else None
         except (ValueError, IndexError):
             pass
         return None
@@ -151,8 +148,8 @@ class FileWatcherService:
             return False
 
         parts = rel.parts
-        # 命名空间布局需 scope/id/文件 三段；旧扁平布局需 id/文件 两段。
-        min_len = 3 if (parts and parts[0] in ("personal", "team")) else 2
+        # personal/{owner_id}/{id}/文件；team/{id}/文件。
+        min_len = 4 if (parts and parts[0] == "personal") else 3
         if len(parts) < min_len:
             return False
 
@@ -170,37 +167,31 @@ class FileWatcherService:
     @classmethod
     async def _handle_change(cls, skill_id: str) -> None:
         """处理单个 skill 的文件变更"""
-        from app.services.native_skill_store import (
-            NativeSkillStore,
-            _read_yaml,
-            _scan_resources,
-            _write_yaml,
-        )
+        from app.services.native_skill_store import NativeSkillStore
         from app.services.skill_sync_service import SkillSyncService
 
-        skill_dir, scope = NativeSkillStore._resolve_dir(skill_id)
-        if skill_dir is None:
+        prefix, scope = await NativeSkillStore._resolve_prefix(skill_id)
+        if prefix is None:
             logger.debug(f"[FileWatcher] skill '{skill_id}' 配置不存在，跳过")
             return
-        config_path = skill_dir / "skill.config.yaml"
 
         try:
-            config = _read_yaml(config_path)
-            resources = _scan_resources(skill_dir)
+            config = NativeSkillStore._read_store_config(prefix)
+            resources = NativeSkillStore._scan_store_resources(prefix)
             if config.get("resources") != resources:
                 config["resources"] = resources
-                _write_yaml(config_path, config)
+                NativeSkillStore._write_store_config(prefix, config)
 
             if scope == "team":
                 await NativeSkillStore._upsert_db(
-                    skill_id, config, str(skill_dir), scope="team",
+                    skill_id, config, prefix, scope="team",
                     team_id=config.get("team_id"),
                     source_skill_id=config.get("source_skill_id"),
                     name=config.get("name") or NativeSkillStore._strip_team_suffix(skill_id),
                 )
             else:
                 await NativeSkillStore._upsert_db(
-                    skill_id, config, str(skill_dir), scope="personal"
+                    skill_id, config, prefix, scope="personal"
                 )
 
             await SkillSyncService.on_skill_changed(

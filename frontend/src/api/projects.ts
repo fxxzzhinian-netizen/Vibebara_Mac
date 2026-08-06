@@ -89,6 +89,7 @@ export interface SkillVersionInfo {
   id: string
   skill_id: string
   seq: number
+  version_number: string
   label: string
   source: string
   created_by_name: string
@@ -362,7 +363,7 @@ export async function promoteDeployment(
 export async function pushDeployment(
   deploymentId: string,
   deployment?: UserSkillDeploymentInfo | null,
-  opts?: { createVersion?: boolean; versionLabel?: string },
+  opts?: { createVersion?: boolean; versionNumber?: string; versionLabel?: string },
 ): Promise<PushDeploymentResponse> {
   if (isOrchestrationEnabled() && deployment) {
     return pushOrchestrated(deploymentId, deployment, opts)
@@ -370,7 +371,13 @@ export async function pushDeployment(
   const { data } = await apiClient.post<PushDeploymentResponse>(
     `/skill-deployments/${deploymentId}/push`,
     null,
-    { params: { create_version: opts?.createVersion ?? false, version_label: opts?.versionLabel ?? '' } },
+    {
+      params: {
+        create_version: opts?.createVersion ?? false,
+        version_number: opts?.versionNumber ?? '',
+        version_label: opts?.versionLabel ?? '',
+      },
+    },
   )
   return data
 }

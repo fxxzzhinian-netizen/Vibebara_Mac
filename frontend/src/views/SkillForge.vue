@@ -156,7 +156,8 @@ async function handlePublishToMarket() {
 async function handleDelete() {
   if (!store.currentId) return
   if (isTeamSkill.value) return
-  const name = store.currentId
+  const id = store.currentId
+  const name = cfg.value?.name || id
   const ok = await confirmDialog({
     title: '删除 Skill',
     message: `确认删除 "${name}"？此操作不可恢复。`,
@@ -165,7 +166,7 @@ async function handleDelete() {
   })
   if (!ok) return
   try {
-    await store.removeSkill(name)
+    await store.removeSkill(id)
     toast.success(`已删除 Skill「${name}」`)
     // 删除后直接回到 SKILL 仓库，避免停留在「未选择 Skill」空状态白屏
     router.push('/')

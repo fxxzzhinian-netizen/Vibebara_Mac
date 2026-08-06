@@ -240,7 +240,7 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
 
   async function push(
     deploymentId: string,
-    opts?: { createVersion?: boolean; versionLabel?: string },
+    opts?: { createVersion?: boolean; versionNumber?: string; versionLabel?: string },
   ) {
     const projectId = currentProjectId.value
     const res = await pushDeployment(

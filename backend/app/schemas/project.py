@@ -291,8 +291,9 @@ class PushContentRequest(BaseModel):
 
     current_hash: str = Field(default="", alias="currentHash")
     files: List[FilePayloadIn] = []
-    # 推送成功后是否创建一个新的版本快照（用户在"是否更新版本序列号"弹窗中选择）。
+    # 推送成功后是否创建一个新的版本快照（用户在"是否更新版本号"弹窗中选择）。
     create_version: bool = Field(default=False, alias="createVersion")
+    version_number: str = Field(default="", alias="versionNumber")
     version_label: str = Field(default="", alias="versionLabel")
 
 

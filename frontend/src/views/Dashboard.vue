@@ -414,7 +414,6 @@ onMounted(() => {
   background: #ffffff;
   box-shadow: var(--card-shadow);
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .skill-card::after {
@@ -429,10 +428,8 @@ onMounted(() => {
     color-mix(in srgb, var(--card-border-hover) 20%, transparent) 70%,
     color-mix(in srgb, var(--card-border-hover) 7%, transparent) 100%
   );
-  clip-path: circle(0% at 0% 100%);
+  opacity: 0;
   pointer-events: none;
-  transition: clip-path 0.85s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: clip-path;
   z-index: 0;
 }
 
@@ -447,7 +444,7 @@ onMounted(() => {
 }
 
 .skill-card:hover::after {
-  clip-path: circle(220% at 0% 100%);
+  opacity: 1;
 }
 
 .card-head {
@@ -486,7 +483,6 @@ onMounted(() => {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  transition: color 0.22s ease;
   /* 始终预留两行高度（1.55 行高 × 2 行），描述一行时也占满，避免挤压卡片 */
   min-height: 3.1em;
 }

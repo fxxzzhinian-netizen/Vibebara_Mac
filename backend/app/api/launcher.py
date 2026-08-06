@@ -36,7 +36,7 @@ IS_WINDOWS = platform.system() == "Windows"
 TOOL_LABELS = {
     "cursor": "Cursor",
     "codex-cli": "Codex CLI",
-    "codex-app": "Codex App",
+    "codex-app": "ChatGPT (Codex)",
     "windsurf": "Windsurf",
     "claude-code": "Claude Code",
     "claude-app": "Claude",
@@ -132,18 +132,25 @@ def _resolve_command(tool: str) -> tuple[list[str], bool]:
 
     if tool == "codex-app":
         if IS_WINDOWS:
-            exe = _find_executable("codex-app.cmd", "codex-app", "Codex.exe")
+            # 新版 Codex 已合并进 ChatGPT 客户端；优先识别 ChatGPT，同时兼容旧 Codex App。
+            exe = _find_executable(
+                "ChatGPT.exe",
+                "chatgpt.exe",
+                "codex-app.cmd",
+                "codex-app",
+                "Codex.exe",
+            )
             if exe:
                 return [exe], False
-            appx_uri = _find_appx_app("Codex")
+            appx_uri = _find_appx_app("*ChatGPT*") or _find_appx_app("*Codex*")
             if appx_uri:
                 return ["explorer.exe", appx_uri], True
         else:
-            exe = _find_executable("codex-app", "Codex")
+            exe = _find_executable("chatgpt", "ChatGPT", "codex-app", "Codex")
             if exe:
                 return [exe], False
         raise FileNotFoundError(
-            "Codex App 未找到，请确认 Codex 桌面应用已安装"
+            "ChatGPT 客户端未找到，请确认已安装包含 Codex 的新版 ChatGPT 客户端"
         )
 
     if tool == "windsurf":
@@ -312,7 +319,7 @@ async def list_tools(user_id: str = Depends(get_current_user_id)):
         if tool_id == "codex-cli":
             mode, desc = "terminal", "在终端中启动 Codex CLI 交互式对话"
         elif tool_id == "codex-app":
-            mode, desc = "app", "启动 Codex 桌面应用"
+            mode, desc = "app", "启动包含 Codex 的 ChatGPT 桌面应用"
         elif tool_id == "windsurf":
             mode, desc = "app", "启动 Windsurf IDE"
         elif tool_id == "claude-code":

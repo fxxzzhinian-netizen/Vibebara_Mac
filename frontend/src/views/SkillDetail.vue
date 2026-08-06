@@ -18,6 +18,11 @@ import {
 import type { ChangeItem } from '@/api/projects'
 import { parseUnifiedDiff, inlineSegments } from '@/utils/diffView'
 import { formatRelativeTime } from '@/utils/relativeTime'
+import {
+  isValidVersionNumber,
+  nextVersionNumber,
+  versionNumberOf,
+} from '@/utils/versionNumber'
 import type { DiffRow, DiffRowType, InlinePair, SegOp } from '@/utils/diffView'
 import { isMockForced, mockVersions, mockVersionDetail, mockResourceFile } from '@/utils/devMockVersions'
 import { useTeamStore } from '@/stores/teamStore'
@@ -143,7 +148,7 @@ function onResourceEdit(kind: 'scripts' | 'references' | 'assets', val: string) 
   }
 }
 
-// 保存团队 Skill：先弹应用内确认框询问是否更新版本序列号（替代浏览器 window.confirm）。
+// 保存团队 Skill：先弹应用内确认框询问是否更新版本号（替代浏览器 window.confirm）。
 const showSaveConfirm = ref(false)
 
 function save() {
@@ -155,8 +160,40 @@ function save() {
 async function doSave(createVersion: boolean) {
   if (!draft.value) return
   showSaveConfirm.value = false
+  let versionNumber = ''
   let versionLabel = ''
   if (createVersion) {
+    let currentVersions = versions.value
+    if (!versionsLoaded.value) {
+      try {
+        const res = await listSkillVersions(skillId.value)
+        if (res.success) currentVersions = res.versions
+      } catch {
+        // 获取建议版本失败时仍可从首版 1.1 开始，由后端做最终校验。
+      }
+    }
+    const enteredVersion = await promptInput({
+      title: '新版本号',
+      message: '版本号格式为 x.y；默认次版本加 1，也可以直接覆盖输入。',
+      defaultValue: nextVersionNumber(currentVersions),
+      placeholder: '例如：1.2',
+      confirmText: '下一步',
+      maxlength: 32,
+    })
+    if (enteredVersion === null) return
+    versionNumber = enteredVersion.trim()
+    if (!isValidVersionNumber(versionNumber)) {
+      toast.error('版本号格式不正确，请输入 x.y，例如 1.2')
+      return
+    }
+    if (
+      currentVersions.some(
+        (version) => versionNumberOf(version) === versionNumber,
+      )
+    ) {
+      toast.error(`版本号 v${versionNumber} 已存在`)
+      return
+    }
     // 应用内输入框（替代 Electron 不支持的 window.prompt）；取消视为不填备注，仍继续保存。
     const label = await promptInput({
       title: '新版本备注',
@@ -171,6 +208,7 @@ async function doSave(createVersion: boolean) {
   try {
     const res = await updateNativeSkill(skillId.value, draft.value, draftVibeh.value, {
       createVersion,
+      versionNumber,
       versionLabel,
     })
     if (res.success) {
@@ -179,7 +217,9 @@ async function doSave(createVersion: boolean) {
         toast.info('未检测到修改，无需保存')
       } else {
         const summary = res.diff_summary && res.diff_summary !== '无改动' ? res.diff_summary : ''
-        const verNote = res.version ? `已创建版本 v${res.version.seq}，` : ''
+        const verNote = res.version
+          ? `已创建版本 v${versionNumberOf(res.version)}，`
+          : ''
         toast.success(
           summary
             ? `已保存：${summary}，${verNote}已记入「项目动态」，其他成员可在项目页「更新本地」`
@@ -204,6 +244,20 @@ async function doSave(createVersion: boolean) {
 const versions = ref<SkillVersionItem[]>([])
 const versionsLoading = ref(false)
 const versionsLoaded = ref(false)
+const versionGroups = computed(() => {
+  const groups = new Map<number, SkillVersionItem[]>()
+  for (const version of versions.value) {
+    const major = Number.parseInt(versionNumberOf(version).split('.')[0] || '1', 10)
+    const groupMajor = Number.isFinite(major) ? major : 1
+    const items = groups.get(groupMajor) ?? []
+    items.push(version)
+    groups.set(groupMajor, items)
+  }
+  return Array.from(groups, ([major, items]) => ({
+    major,
+    versions: items.sort((a, b) => b.seq - a.seq),
+  })).sort((a, b) => a.major - b.major)
+})
 // 改动明细弹窗：保存当前展示的版本（替代原先的下拉展开）。
 const changesVersion = ref<SkillVersionItem | null>(null)
 const restoringId = ref('')
@@ -395,14 +449,14 @@ function closeVersionView() {
 async function restore(v: SkillVersionItem) {
   const ok = await confirmDialog({
     title: '回滚版本',
-    message: `确认回滚到版本 v${v.seq}？\n\n团队仓库内容将被还原为该版本，并生成一条新的回滚版本；其他成员可在项目页「更新本地」拉取。`,
+    message: `确认回滚到版本 v${versionNumberOf(v)}？\n\n团队仓库内容将被还原为该版本，并生成一条新的回滚版本；其他成员可在项目页「更新本地」拉取。`,
     confirmText: '回滚',
     danger: true,
   })
   if (!ok) return
   // 开发者模式：不调用真实接口，仅提示
   if (devMock.value) {
-    toast.info(`（模拟）已回滚到 v${v.seq}`)
+    toast.info(`（模拟）已回滚到 v${versionNumberOf(v)}`)
     return
   }
   restoringId.value = v.id
@@ -410,7 +464,9 @@ async function restore(v: SkillVersionItem) {
     const res = await restoreSkillVersion(skillId.value, v.id)
     if (res.success) {
       toast.success(
-        res.version ? `已回滚到 v${v.seq}（新版本 v${res.version.seq}）` : `已回滚到 v${v.seq}`,
+        res.version
+          ? `已回滚到 v${versionNumberOf(v)}（新版本 v${versionNumberOf(res.version)}）`
+          : `已回滚到 v${versionNumberOf(v)}`,
       )
       await load()
       await loadVersions()
@@ -608,18 +664,44 @@ function timeAgo(ts: string | null | undefined): string {
               <span v-if="isTeamSkill && !canEdit" class="readonly-badge">团队仓库只读</span>
               <span v-else-if="!isTeamSkill && db" class="personal-badge">个人 Skill</span>
             </div>
-            <div class="toolbar-right">
+            <div
+              class="toolbar-right"
+              :class="{ 'action-menu': !editing && canEdit && cfg }"
+            >
               <button
                 v-if="isTeamSkill && isTeamMember && cfg && !editing"
                 class="btn tool-btn publish"
                 :disabled="publishingMarket"
                 title="发布到 SKILL 市场"
+                :aria-label="publishingMarket ? '发布中' : '发布到市场'"
                 @click="handlePublishToMarket"
-              >{{ publishingMarket ? '发布中…' : '发布到市场' }}</button>
+              >
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M594.986667 549.973333a31.146667 31.146667 0 0 0 44.373333 0 31.530667 31.530667 0 0 0 0.426667-44.8l-121.216-122.88a32.725333 32.725333 0 0 0-21.973334-9.386666 32.768 32.768 0 0 0-22.4 9.386666l-120.832 122.88a31.914667 31.914667 0 0 0 0 44.8 31.146667 31.146667 0 0 0 44.373334 0l67.157333-68.266666v206.08a31.445333 31.445333 0 1 0 62.933333 0v-206.08l67.157334 68.266666z m229.674666-164.864c9.941333-0.128 20.736-0.256 30.592-0.256 10.538667 0 19.413333 8.533333 19.413334 19.2v343.04c0 105.813333-85.333333 191.573333-190.08 191.573334H348.714667C238.506667 938.666667 149.333333 848.64 149.333333 737.706667V277.76C149.333333 171.946667 234.24 85.333333 339.84 85.333333h225.578667c10.581333 0 19.456 8.96 19.456 19.626667v137.386667c0 78.08 63.36 142.08 141.098666 142.506666 17.749333 0 33.536 0.128 47.36 0.256 10.88 0.085333 20.565333 0.170667 29.098667 0.170667 5.973333 0 13.824-0.085333 22.229333-0.170667z m11.818667-62.293333c-34.730667 0.128-75.648 0-105.088-0.298667-46.72 0-85.205333-38.869333-85.205333-86.058666V123.989333c0-18.389333 22.058667-27.52 34.688-14.250666l124.416 130.602666 45.696 48.042667a20.352 20.352 0 0 1-14.506667 34.432z" fill="currentColor" />
+                </svg>
+              </button>
               <template v-if="canEdit && cfg">
                 <template v-if="!editing">
-                  <button class="btn tool-btn delete" @click="askDeleteSkill">删除</button>
-                  <button class="btn tool-btn edit" @click="startEdit">编辑</button>
+                  <button
+                    class="btn tool-btn danger"
+                    title="删除"
+                    aria-label="删除"
+                    @click="askDeleteSkill"
+                  >
+                    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M865.578667 223.701333c16.64 0 30.421333 13.781333 30.421333 31.317334v16.213333a31.146667 31.146667 0 0 1-30.421333 31.317333H158.464A31.146667 31.146667 0 0 1 128 271.232v-16.213333c0-17.536 13.824-31.317333 30.464-31.317334H282.88c25.258667 0 47.232-17.962667 52.906667-43.306666l6.528-29.098667C352.469333 111.658667 385.749333 85.333333 423.893333 85.333333h176.213334c37.717333 0 71.424 26.325333 81.152 63.872l6.954666 31.146667a54.613333 54.613333 0 0 0 52.949334 43.349333h124.416z m-63.189334 592.682667c12.970667-121.045333 35.712-408.618667 35.712-411.52a31.829333 31.829333 0 0 0-7.68-23.808 30.976 30.976 0 0 0-22.357333-9.984H216.32c-8.533333 0-16.682667 3.712-22.357333 9.984a33.706667 33.706667 0 0 0-8.106667 23.808l2.261333 27.605333c6.058667 75.221333 22.912 284.757333 33.834667 383.914667 7.68 73.045333 55.637333 118.954667 125.056 120.618667 53.589333 1.237333 108.8 1.664 165.205333 1.664 53.162667 0 107.093333-0.426667 162.346667-1.664 71.850667-1.237333 119.722667-46.336 127.872-120.618667z" fill="currentColor" />
+                    </svg>
+                  </button>
+                  <button
+                    class="btn tool-btn edit"
+                    title="编辑"
+                    aria-label="编辑"
+                    @click="startEdit"
+                  >
+                    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M400.042667 854.528l374.912-484.821333c20.352-26.112 27.605333-56.32 20.821333-87.125334-5.888-27.989333-23.082667-54.613333-48.896-74.752L683.946667 157.824c-54.784-43.562667-122.709333-38.997333-161.664 11.008l-42.069334 54.613333a16.128 16.128 0 0 0 2.688 22.442667l108.672 87.125333c7.253333 6.912 12.672 16.085333 14.08 27.093334a40.32 40.32 0 0 1-34.901333 44.458666 36.096 36.096 0 0 1-27.605333-7.765333l-111.829334-89.002667a13.354667 13.354667 0 0 0-18.133333 2.304L147.413333 654.08c-17.194667 21.546667-23.082667 49.536-17.194666 76.586667l33.962666 147.242666a17.066667 17.066667 0 0 0 16.725334 13.312l149.418666-1.834666a89.770667 89.770667 0 0 0 69.717334-34.858667z m209.237333-45.866667h243.626667c23.765333 0 43.093333 19.626667 43.093333 43.690667 0 24.106667-19.328 43.648-43.093333 43.648h-243.626667c-23.765333 0-43.093333-19.541333-43.093333-43.648s19.328-43.690667 43.093333-43.690667z" fill="currentColor" />
+                    </svg>
+                  </button>
                 </template>
                 <template v-else>
                   <button class="btn tool-btn" :disabled="saving" @click="cancelEdit">取消</button>
@@ -864,7 +946,7 @@ function timeAgo(ts: string | null | undefined): string {
                 <div class="ver-head">
                   <h3 class="card-title ver-card-title">
                     版本历史
-                    <HelpTip text="每次推送到团队或团队仓库网页编辑保存时，可选择「更新版本序列号」生成一条版本快照；以下为该 Skill 的全部版本（按序列号倒序）。" :size="17" />
+                    <HelpTip text="每次推送到团队或团队仓库网页编辑保存时，可选择「更新版本号」生成一条版本快照；以下为该 Skill 的全部版本（按创建顺序倒序）。" :size="17" />
                     <span v-if="devMock" class="dev-mock-chip" title="开发者模式：当前为模拟数据（?mock=1 开启 / ?mock=0 关闭）">模拟数据</span>
                   </h3>
                   <button
@@ -885,40 +967,102 @@ function timeAgo(ts: string | null | undefined): string {
                   <span class="spinner" /> 加载中...
                 </div>
                 <div v-else-if="!versions.length" class="state-box">
-                  暂无版本记录。推送或保存时选择「更新版本序列号」即可创建第一个版本。
+                  暂无版本记录。推送或保存时选择「更新版本号」即可创建第一个版本。
                 </div>
 
-                <ul v-else class="ver-list">
-                  <li v-for="v in versions" :key="v.id" class="ver-item">
-                    <div class="ver-row">
-                      <span class="ver-seq">v{{ v.seq }}</span>
-                      <span v-if="v.label" class="ver-label">{{ v.label }}</span>
-                      <span :class="['ver-source', v.source]">{{ sourceLabel(v.source) }}</span>
-                      <span v-if="v.resource_count" class="ver-res-chip">{{ v.resource_count }} 个资源文件</span>
-                      <span class="ver-meta">{{ v.created_by_name || v.created_by || '—' }} · {{ timeAgo(v.created_at) }}</span>
-                      <span class="ver-actions">
-                        <button
-                          v-if="v.change_items && v.change_items.length"
-                          type="button"
-                          class="ver-changes-btn"
-                          @click="openChanges(v)"
+                <div v-else class="ver-major-grid">
+                  <section
+                    v-for="group in versionGroups"
+                    :key="group.major"
+                    class="ver-major-column"
+                  >
+                    <h4 class="ver-major-title">V{{ group.major }}</h4>
+                    <ul class="ver-list" :aria-label="`V${group.major} 版本推送时间线`">
+                    <li
+                      v-for="v in group.versions"
+                      :key="v.id"
+                      class="ver-item"
+                      :class="{ 'is-latest': v.id === versions[0]?.id }"
+                    >
+                      <span class="ver-bullet" aria-hidden="true">
+                        <svg
+                          v-if="v.source === 'push'"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
                         >
-                          改动明细（{{ v.change_items.length }}）
-                        </button>
-                        <button class="btn-xs" :disabled="viewLoading" @click="viewVersion(v)">查看版本</button>
-                        <button
-                          v-if="canEdit || devMock"
-                          class="btn-xs danger"
-                          :disabled="restoringId === v.id"
-                          @click="restore(v)"
+                          <circle cx="7" cy="18" r="2" />
+                          <circle cx="7" cy="6" r="2" />
+                          <circle cx="17" cy="6" r="2" />
+                          <path d="M7 8v8M9 18h6a2 2 0 0 0 2-2v-5M14 14l3-3 3 3" />
+                        </svg>
+                        <svg
+                          v-else-if="v.source === 'restore'"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
                         >
-                          {{ restoringId === v.id ? '回滚中...' : '回滚' }}
-                        </button>
+                          <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                          <path d="M3 3v5h5" />
+                        </svg>
+                        <svg
+                          v-else
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                        </svg>
                       </span>
-                    </div>
-                    <div v-if="v.change_summary" class="ver-summary">{{ v.change_summary }}</div>
-                  </li>
-                </ul>
+
+                      <div class="ver-body">
+                        <div class="ver-row">
+                          <span class="ver-seq">v{{ versionNumberOf(v) }}</span>
+                          <span :class="['ver-source', v.source]">{{ sourceLabel(v.source) }}</span>
+                          <span v-if="v.label" class="ver-label">{{ v.label }}</span>
+                        </div>
+
+                        <div class="ver-author">{{ v.created_by_name || v.created_by || '—' }}</div>
+                        <div v-if="v.change_summary" class="ver-summary">{{ v.change_summary }}</div>
+
+                        <div class="ver-footer">
+                          <time>{{ timeAgo(v.created_at) }}</time>
+                          <span v-if="v.resource_count" class="ver-res-chip">{{ v.resource_count }} 个资源文件</span>
+                          <span class="ver-actions">
+                            <button
+                              v-if="v.change_items && v.change_items.length"
+                              type="button"
+                              class="ver-changes-btn"
+                              @click="openChanges(v)"
+                            >
+                              查看改动（{{ v.change_items.length }}）
+                            </button>
+                            <button class="btn-xs" :disabled="viewLoading" @click="viewVersion(v)">查看版本</button>
+                            <button
+                              v-if="canEdit || devMock"
+                              class="btn-xs danger"
+                              :disabled="restoringId === v.id"
+                              @click="restore(v)"
+                            >
+                              {{ restoringId === v.id ? '回滚中...' : '回滚' }}
+                            </button>
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                    </ul>
+                  </section>
+                </div>
               </section>
 
               <!-- Platform Structure（内嵌，与个人 Skill 编辑器一致；只读 Skill 时禁用编辑） -->
@@ -948,7 +1092,7 @@ function timeAgo(ts: string | null | undefined): string {
     <!-- 版本内容查看弹窗 -->
     <BaseModal
       :model-value="!!viewingVersion"
-      :title="viewingVersion ? `版本 v${viewingVersion.seq} 内容快照` : ''"
+      :title="viewingVersion ? `版本 v${versionNumberOf(viewingVersion)} 内容快照` : ''"
       :width="820"
       @update:model-value="closeVersionView"
     >
@@ -992,7 +1136,7 @@ function timeAgo(ts: string | null | undefined): string {
     <!-- 改动明细弹窗：逐项渲染字段 / 正文 / 资源的具体改动（替代原下拉栏） -->
     <BaseModal
       :model-value="!!changesVersion"
-      :title="changesVersion ? `版本 v${changesVersion.seq} 改动明细` : ''"
+      :title="changesVersion ? `版本 v${versionNumberOf(changesVersion)} 改动明细` : ''"
       :width="820"
       @update:model-value="closeChanges"
     >
@@ -1084,7 +1228,7 @@ function timeAgo(ts: string | null | undefined): string {
       <template v-if="resourceView">
         <p class="ver-modal-sub">
           <span class="res-verb" :class="rvChange">{{ resourceVerb(rvChange) }}</span>
-          <template v-if="rvData?.prev_seq != null">相对上一版本 v{{ rvData.prev_seq }}</template>
+          <template v-if="rvData?.prev_version_number">相对上一版本 v{{ rvData.prev_version_number }}</template>
           <template v-else>该版本无可对比的上一版本</template>
         </p>
 
@@ -1096,12 +1240,12 @@ function timeAgo(ts: string | null | undefined): string {
           <template v-if="rvIsImage">
             <div class="res-img-grid" :class="{ dual: rvChange === 'modified' && rvOld && rvNew }">
               <div v-if="rvChange === 'modified' && rvOld" class="res-img-cell">
-                <div class="res-img-cap del">旧 (v{{ rvData?.prev_seq }})</div>
+                <div class="res-img-cap del">旧 (v{{ rvData?.prev_version_number }})</div>
                 <img v-if="imageDataUrl(rvOld, resourceView.path)" :src="imageDataUrl(rvOld, resourceView.path)" alt="旧版本" />
                 <div v-else class="res-empty">无法预览（{{ fmtSize(rvOld.size) }}）</div>
               </div>
               <div v-if="rvChange !== 'removed' && rvNew" class="res-img-cell">
-                <div class="res-img-cap add">{{ rvChange === 'modified' ? '新 (v' + rvData?.seq + ')' : '内容' }}</div>
+                <div class="res-img-cap add">{{ rvChange === 'modified' ? '新 (v' + rvData?.version_number + ')' : '内容' }}</div>
                 <img v-if="imageDataUrl(rvNew, resourceView.path)" :src="imageDataUrl(rvNew, resourceView.path)" alt="新版本" />
                 <div v-else class="res-empty">无法预览（{{ fmtSize(rvNew.size) }}）</div>
               </div>
@@ -1158,11 +1302,11 @@ function timeAgo(ts: string | null | undefined): string {
       </template>
     </BaseModal>
 
-    <!-- 保存确认弹窗：是否更新版本序列号（应用内，替代 window.confirm） -->
+    <!-- 保存确认弹窗：是否更新版本号（应用内，替代 window.confirm） -->
     <BaseModal v-model="showSaveConfirm" title="保存修改" :width="440">
-      <p class="confirm-text">是否同时更新版本序列号？</p>
+      <p class="confirm-text">是否同时更新版本号？</p>
       <p class="confirm-hint">
-        更新版本：本次保存创建一个新版本（序列号 +1，可在「版本」标签查看 / 回滚）。<br />
+        更新版本：本次保存可确认或填写具体版本号（默认次版本 +1，可在「版本」标签查看 / 回滚）。<br />
         仅保存：只保存内容，不创建版本。
       </p>
       <template #footer>
@@ -1394,6 +1538,157 @@ function timeAgo(ts: string | null | undefined): string {
 .tool-btn.delete:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; color: #ffffff; }
 .tool-btn.publish { background: #4f46e5; border-color: #4f46e5; color: #ffffff; }
 .tool-btn.publish:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; color: #ffffff; box-shadow: 0 6px 14px rgba(79, 70, 229, 0.2); }
+
+/* 团队 Skill 查看态操作区：与个人 Skill 相同的图标菜单，触摸单项后横向展开。 */
+.toolbar-right.action-menu {
+  position: relative;
+  width: 226px;
+  height: 58px;
+  padding: 4px 8px;
+  gap: 0;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: #f1f3f5;
+  transition: width 0.2s ease-in;
+}
+
+.toolbar-right.action-menu:hover,
+.toolbar-right.action-menu:focus-within {
+  width: 258px;
+}
+
+.toolbar-right.action-menu:has(.tool-btn.publish:hover),
+.toolbar-right.action-menu:has(.tool-btn.publish:focus-visible) {
+  width: 288px;
+}
+
+.action-menu .tool-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 70px;
+  min-width: 0;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  line-height: 1;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  transform-origin: center left;
+  transition: width 0.2s ease-in, background-color 0.2s ease-in, color 0.2s ease-in;
+}
+
+.action-menu:hover .tool-btn:hover:not(:disabled),
+.action-menu .tool-btn:focus-visible {
+  width: 102px;
+  transform: none;
+  box-shadow: none;
+}
+
+.action-menu:hover .tool-btn.publish:hover:not(:disabled),
+.action-menu .tool-btn.publish:focus-visible {
+  width: 132px;
+}
+
+.action-menu .tool-btn:focus-visible {
+  outline: 2px solid #151717;
+  outline-offset: 2px;
+}
+
+.action-menu .tool-btn::before {
+  position: absolute;
+  top: 50%;
+  left: 48px;
+  right: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(100%, -50%);
+  transition: transform 0.2s ease-in, opacity 0.2s ease-in;
+}
+
+.action-menu .tool-btn.publish::before {
+  content: '发布到市场';
+  left: 51px;
+  right: 11px;
+  letter-spacing: 0;
+}
+
+.action-menu .tool-btn.danger::before {
+  content: '删除';
+  letter-spacing: 0.18em;
+}
+
+.action-menu .tool-btn.edit::before {
+  content: '编辑';
+  letter-spacing: 0.18em;
+}
+
+.action-menu:hover .tool-btn:hover:not(:disabled)::before,
+.action-menu .tool-btn:focus-visible::before {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.action-menu .tool-btn svg {
+  position: absolute;
+  left: 21px;
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex-shrink: 0;
+  transition: left 0.2s ease-in;
+}
+
+.action-menu:hover .tool-btn.publish:hover:not(:disabled) svg,
+.action-menu .tool-btn.publish:focus-visible svg {
+  left: 14px;
+}
+
+.action-menu .tool-btn.publish {
+  background: transparent;
+  color: #4f46e5;
+  border-color: transparent;
+}
+
+.action-menu .tool-btn.publish:hover:not(:disabled) {
+  background: #e8e7ff;
+  color: #4f46e5;
+  border-color: transparent;
+}
+
+.action-menu .tool-btn.danger {
+  background: transparent;
+  color: #dc2626;
+  border-color: transparent;
+}
+
+.action-menu .tool-btn.danger:hover:not(:disabled) {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: transparent;
+}
+
+.action-menu .tool-btn.edit {
+  background: transparent;
+  color: #151717;
+  border-color: transparent;
+}
+
+.action-menu .tool-btn.edit:hover:not(:disabled) {
+  background: #e2e5e9;
+  color: #151717;
+  border-color: transparent;
+}
 
 .deploy-msg {
   margin-top: 0.75rem;
@@ -1740,32 +2035,90 @@ function timeAgo(ts: string | null | undefined): string {
   background: #fef3c7;
   color: #b45309;
 }
-.ver-list { list-style: none; margin: 0; padding: 0; }
-.ver-item {
-  background: #ffffff;
-  border: 1px solid #ebedf0;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 10px;
+.ver-major-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: start;
+  gap: 28px;
+  width: 100%;
+  padding-top: 8px;
 }
+.ver-major-column {
+  min-width: 0;
+}
+.ver-major-column:not(:last-child) {
+  padding-right: 28px;
+  border-right: 1px solid #eceef0;
+}
+.ver-major-title {
+  margin: 0 0 18px 14px;
+  color: #151717;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+.ver-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+}
+.ver-item {
+  position: relative;
+  padding: 0 0 32px 26px;
+  color: #52525b;
+  text-align: left;
+}
+.ver-item:last-child { padding-bottom: 0; }
+.ver-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 24px;
+  bottom: 0;
+  left: -2px;
+  border-left: 3px solid #424242;
+  pointer-events: none;
+}
+.ver-item.is-latest:not(:last-child)::before {
+  border-left-style: dotted;
+  border-left-color: #daa520;
+}
+.ver-bullet {
+  position: absolute;
+  top: 0;
+  left: -14px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border: 3px solid #242424;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #242424;
+}
+.ver-item.is-latest .ver-bullet {
+  border-color: #daa520;
+  color: #8a6510;
+}
+.ver-bullet svg { width: 14px; height: 14px; }
+.ver-body { min-width: 0; }
 .ver-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  min-height: 25px;
 }
 .ver-seq {
-  font-weight: 700;
+  font-weight: 600;
   font-size: 15px;
-  color: #151717;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1;
+  color: #0284c7;
 }
 .ver-label {
   font-size: 12px;
   color: #4b5563;
-  background: #f3f4f6;
-  border-radius: 999px;
-  padding: 2px 10px;
 }
 .ver-source {
   font-size: 11px;
@@ -1777,7 +2130,20 @@ function timeAgo(ts: string | null | undefined): string {
 }
 .ver-source.restore { background: #fffbeb; color: #b45309; }
 .ver-source.web_edit { background: #f0fdf4; color: #15803d; }
-.ver-meta { font-size: 12px; color: #9ca3af; }
+.ver-author {
+  margin-top: 1px;
+  font-size: 13px;
+  color: #71717a;
+}
+.ver-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #71717a;
+}
 .ver-res-chip {
   font-size: 11px;
   padding: 2px 8px;
@@ -1799,25 +2165,27 @@ function timeAgo(ts: string | null | undefined): string {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   padding: 2px 0;
 }
-.ver-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-/* 卡片右上角操作按钮：统一为纯色按钮（边框与底色同色，遵循 solid-color-buttons 规范）。
-   查看=实底浅灰次级，回滚=实底危险红，与项目页 .btn-soft / .btn-danger 口径一致。 */
+.ver-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 .btn-xs {
-  border: 1px solid #d4d8db;
-  background: #d4d8db;
+  border: none;
+  background: transparent;
   color: #3b434f;
-  border-radius: 7px;
-  padding: 4px 12px;
+  border-radius: 6px;
+  padding: 4px 8px;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.btn-xs:hover:not(:disabled) { background: #c1c7cd; border-color: #c1c7cd; color: #151717; }
+.btn-xs:hover:not(:disabled) { background: #eef0f2; color: #151717; }
 .btn-xs:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-xs.danger { background: #dc2626; border-color: #dc2626; color: #ffffff; }
-.btn-xs.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; color: #ffffff; }
+.btn-xs.danger { background: transparent; color: #dc2626; }
+.btn-xs.danger:hover:not(:disabled) { background: #fee2e2; color: #b91c1c; }
 
 /* 刷新：纯图标按钮（无背景无边框，hover 绕中心转 60°） */
 .ver-refresh-btn {
@@ -1842,28 +2210,36 @@ function timeAgo(ts: string | null | undefined): string {
 }
 .ver-refresh-btn:hover:not(:disabled) svg,
 .ver-refresh-btn.spinning svg { transform: rotate(60deg); }
-.ver-summary { margin-top: 8px; font-size: 13px; color: #374151; }
-/* 改动明细触发按钮：纯色浅紫文字按钮，点击打开弹窗（替代原下拉展开）。
-   现位于版本行右侧操作区（查看版本左侧），与 .btn-xs 同高对齐。 */
+.ver-summary {
+  display: -webkit-box;
+  margin-top: 8px;
+  overflow: hidden;
+  color: #52525b;
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: break-spaces;
+}
+/* 时间线操作默认透明，悬浮时显示轻底色。 */
 .ver-changes-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  border: 1px solid #e0e7ff;
-  background: #eef2ff;
-  color: #4f46e5;
-  border-radius: 8px;
-  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: #0284c7;
+  border-radius: 6px;
+  padding: 4px 8px;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .ver-changes-btn:hover {
-  background: #e0e7ff;
-  border-color: #c7d2fe;
-  color: #4338ca;
+  background: #e0f2fe;
+  color: #0369a1;
 }
 
 /* 改动明细弹窗顶部摘要 */

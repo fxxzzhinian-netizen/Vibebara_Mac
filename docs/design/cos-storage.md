@@ -51,11 +51,11 @@ class ObjectStore:
 
 `LocalObjectStore` 的 root 取 `COWORK_DATA_DIR`，键为相对路径，落地后与现有磁盘布局完全一致；`CosObjectStore` 在键前再拼可选 `COS_PREFIX`。
 
-- 个人 Skill：`skills/personal/{id}/skill.config.yaml`、`/SKILL.md`、`/scripts/**`、`/references/**`、`/assets/**`、`/LICENSE`
+- 个人 Skill：`skills/personal/{owner_id}/{id}/skill.config.yaml`、`/SKILL.md`、`/scripts/**`、`/references/**`、`/assets/**`、`/LICENSE`
 - 团队 Skill：`skills/team/{id}/...`
 - 版本快照资源：`skill_versions/{skill_id}/{version_id}/scripts|references|assets/**`
 
-DB 列 `store_path` 改存「对象键前缀」（如 `skills/personal/foo`、`skills/team/foo-team-abc12345`），各消费者以此作为前缀读写。旧数据已在拆表阶段约定丢弃，前缀为新写。
+个人 Skill 的 `id` 是内部 UUID，自然名保存在 `name`；数据库以 `(owner_id, name)` 保证用户内不重名，不同用户可以使用同一名称。DB 列 `store_path` 存「对象键前缀」（如 `skills/personal/{owner_id}/{uuid}`、`skills/team/foo-team-abc12345`），各消费者只按该字段寻址，不从自然名反推对象路径。旧数据约定丢弃，不执行历史前缀迁移。
 
 ## 5. 内容哈希口径（必须位级一致）
 

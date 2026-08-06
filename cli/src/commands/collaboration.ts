@@ -19,6 +19,7 @@ export interface MergeCommandOptions extends CommonOptions {
 
 export interface PushCommandOptions extends CommonOptions {
   createVersion?: boolean;
+  versionNumber?: string;
   versionLabel?: string;
 }
 

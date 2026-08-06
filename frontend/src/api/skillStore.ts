@@ -13,8 +13,8 @@ import {
 
 export interface NativeSkillItem {
   id: string
-  // 自然名：个人 Skill 即 id；团队 Skill 为去团队后缀的自然名（id 为团队代理键）。
-  name?: string
+  // 自然名用于展示与本机部署目录；id 是个人 UUID / 团队代理键。
+  name: string
   display_name: string
   description: string
   short_description: string
@@ -76,6 +76,7 @@ export interface SkillVersionItem {
   skill_id: string
   team_id: string | null
   seq: number
+  version_number: string
   label: string
   content_hash: string
   change_summary: string
@@ -155,7 +156,7 @@ export async function updateNativeSkill(
   id: string,
   partial: Record<string, unknown>,
   vibeh_content?: string,
-  opts?: { createVersion?: boolean; versionLabel?: string },
+  opts?: { createVersion?: boolean; versionNumber?: string; versionLabel?: string },
 ): Promise<MutationResponse> {
   const { data } = await apiClient.put<MutationResponse>(
     `/skill-forge/store/${id}`,
@@ -163,6 +164,7 @@ export async function updateNativeSkill(
       partial,
       vibeh_content: vibeh_content ?? null,
       create_version: opts?.createVersion ?? false,
+      version_number: opts?.versionNumber ?? '',
       version_label: opts?.versionLabel ?? '',
     },
   )
@@ -266,8 +268,10 @@ export interface VersionResourceFileResponse {
   path?: string
   change?: 'added' | 'removed' | 'modified' | 'unknown'
   seq?: number
+  version_number?: string
   prev_version_id?: string | null
   prev_seq?: number | null
+  prev_version_number?: string | null
   new?: VersionResourceFileSide | null
   old?: VersionResourceFileSide | null
   diff?: string

@@ -48,14 +48,19 @@ class _SkillColumnsMixin:
 class PersonalSkill(_SkillColumnsMixin, Base):
     """个人 Skill 仓库（scope=personal）。
 
-    PK `id` = skill 自然名（个人仓库内唯一）。磁盘落 `{SKILL_STORE_DIR}/personal/{id}/`。
+    `id` 为内部 UUID；`name` 为用户可见自然名，并在 owner 维度唯一。
+    对象存储落 `skills/personal/{owner_id}/{id}/`。
     """
 
     __tablename__ = "personal_skills"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_personal_skill_owner_name"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    owner_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("users.id"), nullable=True, index=True
+    name: Mapped[str] = mapped_column(String(64), index=True)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False, index=True
     )
 
 

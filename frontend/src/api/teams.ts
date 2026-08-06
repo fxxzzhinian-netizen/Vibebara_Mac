@@ -52,6 +52,7 @@ export interface TeamSkillHistoryItem {
   skill_name: string
   team_id: string | null
   seq: number
+  version_number: string
   label: string
   change_summary: string
   resource_count: number

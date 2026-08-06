@@ -88,7 +88,7 @@ class MigrateResponse(BaseModel):
 
 class NativeSkillItem(BaseModel):
     id: str
-    # 自然名：个人 Skill 即 id；团队 Skill 为去团队后缀的自然名（id 为团队代理键）。
+    # 自然名用于展示和本机部署；id 为个人 UUID 或团队代理键。
     name: str = ""
     display_name: str = ""
     description: str = ""
@@ -138,8 +138,9 @@ class NativeSkillCreateRequest(BaseModel):
 class NativeSkillUpdateRequest(BaseModel):
     partial: Dict[str, Any]
     vibeh_content: Optional[str] = None
-    # 团队仓库网页编辑器保存时：用户勾选"更新版本序列号"则建一条版本快照。
+    # 团队仓库网页编辑器保存时：用户勾选"更新版本号"则建一条版本快照。
     create_version: bool = False
+    version_number: str = ""
     version_label: str = ""
 
 
@@ -245,6 +246,7 @@ class SkillVersionItem(BaseModel):
     skill_id: str
     team_id: Optional[str] = None
     seq: int
+    version_number: str
     label: str = ""
     content_hash: str = ""
     change_summary: str = ""
