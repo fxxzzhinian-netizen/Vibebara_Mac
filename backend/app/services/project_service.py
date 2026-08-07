@@ -809,9 +809,23 @@ async def stop_tracking_deployment(
         if deployment.user_id != user_id:
             return {"success": False, "error": "Cannot stop another user's deployment"}
 
+        project = await session.get(Project, deployment.project_id)
         install_path = deployment.install_path
         deployment.tracking_enabled = False
         deployment.status = "untracked"
+        await _write_change_log(
+            session=session,
+            team_id=project.team_id if project else None,
+            project_id=deployment.project_id,
+            deployment_id=deployment.id,
+            skill_id=deployment.team_skill_id,
+            user_id=user_id,
+            action="stopped",
+            version=deployment.repo_version,
+            diff_summary="停止跟踪",
+            base_hash=deployment.installed_hash,
+            new_hash=deployment.installed_hash,
+        )
         await session.commit()
 
     if delete_files and install_path:
@@ -2716,9 +2730,11 @@ async def get_changes_since(
             {
                 "id": log.id,
                 "skill_id": log.skill_id,
+                "deployment_id": log.deployment_id,
                 "user_id": log.user_id,
                 "user_display_name": user_map.get(log.user_id, log.user_id),
                 "skill_display_name": skill_map.get(log.skill_id, log.skill_id),
+                "source": log.source,
                 "action": log.action,
                 "version": log.version,
                 "diff_summary": log.diff_summary,

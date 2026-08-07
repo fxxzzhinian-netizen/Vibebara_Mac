@@ -7,19 +7,14 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useProjectSyncStore } from '@/stores/projectSyncStore'
 import { useTeamSync } from '@/composables/useTeamSync'
 import { listNativeSkills, type NativeSkillItem } from '@/api/skillStore'
-import {
-  listTeamSkillHistory,
-  type TeamSkillHistoryItem,
-  type TeamMemberInfo,
-} from '@/api/teams'
-import type { ProjectInfo } from '@/api/projects'
+import type { TeamMemberInfo } from '@/api/teams'
 import { useSkillStore } from '@/stores/skillStore'
 import { toast } from '@/composables/useToast'
 import { getSkeletonCount, setSkeletonCount } from '@/utils/skeletonCount'
 import { formatRelativeTime } from '@/utils/relativeTime'
-import { versionNumberOf } from '@/utils/versionNumber'
 import { useDirectionalTransition } from '@/composables/useDirectionalTransition'
 import AppTopNav from '@/components/AppTopNav.vue'
+import AppEmptyState from '@/components/AppEmptyState.vue'
 import AddSkillModal from '@/components/AddSkillModal.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import BaseSelect from '@/components/BaseSelect.vue'
@@ -96,16 +91,6 @@ const {
 const showCreateProject = ref(false)
 const newProjectName = ref('')
 const newProjectDesc = ref('')
-// 项目卡片上的编辑入口
-const showEditProject = ref(false)
-const editProjectTarget = ref<ProjectInfo | null>(null)
-const editProjectName = ref('')
-const editProjectDescription = ref('')
-const projectSaving = ref(false)
-// 删除项目确认弹窗（应用内弹窗，替代浏览器 window.confirm）
-const showDeleteProject = ref(false)
-const deleteTarget = ref<{ id: string; name: string } | null>(null)
-const deletingProject = ref(false)
 // 解散团队确认弹窗（应用内弹窗，替代浏览器 window.confirm）
 const showDissolveTeam = ref(false)
 const dissolvingTeam = ref(false)
@@ -146,14 +131,6 @@ const ROLE_LABELS: Record<string, string> = {
 function roleLabel(role: string): string {
   return ROLE_LABELS[role] || role
 }
-const SOURCE_LABELS: Record<string, string> = {
-  push: '部署推送',
-  web_edit: '网页编辑',
-  restore: '版本回滚',
-}
-function sourceLabel(src: string): string {
-  return SOURCE_LABELS[src] || src || '—'
-}
 
 // —— 分配权限（仅 owner）——
 const showAssignRole = ref(false)
@@ -176,57 +153,6 @@ async function changeRole(member: TeamMemberInfo, role: string) {
     toast.error(res.error || '修改成员角色失败')
   }
 }
-
-// —— 提交历史 / 审计（owner + admin）——
-const HISTORY_PAGE = 20
-const historyItems = ref<TeamSkillHistoryItem[]>([])
-const historyLoading = ref(false)
-const historyHasMore = ref(false)
-const historyFilterSkillId = ref('')
-
-const historySkillOptions = computed(() =>
-  teamSkills.value.map((s) => ({ id: s.id, name: s.display_name || s.name || s.id })),
-)
-
-// 历史筛选下拉选项（全局 BaseSelect 格式）：首项「全部 Skill」+ 各团队 Skill
-const historyFilterOptions = computed(() => [
-  { label: '全部 Skill', value: '' },
-  ...historySkillOptions.value.map((o) => ({ label: o.name, value: o.id })),
-])
-
-async function loadHistory(reset = true) {
-  const teamId = teamStore.currentTeamId
-  if (!teamId || historyLoading.value) return
-  if (reset) historyItems.value = []
-  historyLoading.value = true
-  try {
-    const offset = reset ? 0 : historyItems.value.length
-    const res = await listTeamSkillHistory(teamId, {
-      skillId: historyFilterSkillId.value || undefined,
-      limit: HISTORY_PAGE,
-      offset,
-    })
-    // 乱序保护：返回时若已切到别的团队则丢弃
-    if (teamStore.currentTeamId !== teamId) return
-    if (res.success) {
-      historyItems.value = reset ? res.items : [...historyItems.value, ...res.items]
-      historyHasMore.value = res.items.length === HISTORY_PAGE
-    }
-  } catch {
-    // 历史为辅助视图，失败不阻断管理页
-  } finally {
-    if (teamStore.currentTeamId === teamId) historyLoading.value = false
-  }
-}
-
-// 进入团队管理标签且具备管理权限时拉取聚合提交历史；切换团队/获得权限后自动重载。
-watch(
-  () => [activeTab.value, canManageProjects.value, teamStore.currentTeamId] as const,
-  ([tab, canManage]) => {
-    if (tab === 'manage' && canManage) loadHistory(true)
-  },
-  { immediate: true },
-)
 
 // —— 团队级实时同步：其他成员的结构性变更自动刷新，无需手动刷新 ——
 const { connected: teamSyncConnected } = useTeamSync(
@@ -349,40 +275,6 @@ async function createProject() {
   }
 }
 
-function openEditProject(project: ProjectInfo) {
-  editProjectTarget.value = project
-  editProjectName.value = project.name
-  editProjectDescription.value = project.description || ''
-  showEditProject.value = true
-}
-
-async function saveProject() {
-  const project = editProjectTarget.value
-  const name = editProjectName.value.trim()
-  if (!project || projectSaving.value) return
-  if (!name) {
-    toast.warning('项目名称不能为空')
-    return
-  }
-
-  const description = editProjectDescription.value.trim()
-  if (name === project.name && description === (project.description || '')) {
-    showEditProject.value = false
-    return
-  }
-
-  projectSaving.value = true
-  const res = await projectStore.update(project.id, name, description)
-  projectSaving.value = false
-  if (res.success) {
-    showEditProject.value = false
-    editProjectTarget.value = null
-    toast.success('项目信息已保存')
-  } else {
-    toast.error(res.error || '保存项目信息失败')
-  }
-}
-
 async function toggleAutoHotUpdate(event: Event) {
   if (!teamStore.currentTeam) return
   const checked = (event.target as HTMLInputElement).checked
@@ -434,26 +326,6 @@ async function saveProfile() {
 
 function goToProject(projectId: string) {
   router.push(`/projects/${projectId}`)
-}
-
-function askRemoveProject(projectId: string, name: string) {
-  deleteTarget.value = { id: projectId, name }
-  showDeleteProject.value = true
-}
-
-async function confirmRemoveProject() {
-  const target = deleteTarget.value
-  if (!target || deletingProject.value) return
-  deletingProject.value = true
-  const res = await projectStore.remove(target.id)
-  deletingProject.value = false
-  if (res.success) {
-    showDeleteProject.value = false
-    deleteTarget.value = null
-    toast.success('项目已删除')
-  } else {
-    toast.error(res.error || '删除项目失败')
-  }
 }
 
 function askRemoveTeam() {
@@ -584,11 +456,12 @@ watch(
               点击重试
             </button>
           </div>
-          <div v-else class="team-empty">
-            <img :src="teamEmptyImg" alt="" draggable="false" />
-            <h3>该团队还没有 Skill</h3>
-            <p>新建或导入一个 Skill，团队成员即可共享使用</p>
-          </div>
+          <AppEmptyState
+            v-else
+            :image="teamEmptyImg"
+            title="暂无 Skill"
+            description="可添加 Skill，开始构建并丰富团队共享技能库"
+          />
         </section>
 
         <!-- 团队项目（顶部 UI 参考团队 SKILL：标题 + 同步徽章 + 右侧新建项目） -->
@@ -618,28 +491,9 @@ watch(
               class="project-card"
               @click="goToProject(project.id)"
             >
-              <button
-                v-if="canManageProjects"
-                class="project-delete"
-                title="删除项目"
-                @click.stop="askRemoveProject(project.id, project.name)"
-              >
-                ×
-              </button>
-              <div class="project-head" :class="{ 'has-delete': canManageProjects }">
+              <div class="project-head">
                 <div class="project-title-group">
                   <h4 class="project-title">{{ project.name }}</h4>
-                  <button
-                    v-if="canManageProjects"
-                    class="project-edit"
-                    title="编辑项目名称与描述"
-                    aria-label="编辑项目名称与描述"
-                    @click.stop="openEditProject(project)"
-                  >
-                    <svg viewBox="0 0 1024 1024" width="16" height="16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <path d="M469.333333 128a42.666667 42.666667 0 0 1 0 85.333333H213.333333v597.333334h597.333334v-256l0.298666-4.992A42.666667 42.666667 0 0 1 896 554.666667v256a85.333333 85.333333 0 0 1-85.333333 85.333333H213.333333a85.333333 85.333333 0 0 1-85.333333-85.333333V213.333333a85.333333 85.333333 0 0 1 85.333333-85.333333z m414.72 12.501333a42.666667 42.666667 0 0 1 0 60.330667L491.861333 593.066667a42.666667 42.666667 0 0 1-60.330666-60.330667l392.192-392.192a42.666667 42.666667 0 0 1 60.330666 0z" fill="currentColor"></path>
-                    </svg>
-                  </button>
                 </div>
                 <span class="project-date">{{ project.created_at?.slice(0, 10) }}</span>
               </div>
@@ -681,11 +535,12 @@ watch(
             </div>
           </div>
 
-          <div v-else class="team-empty">
-            <img :src="teamEmptyImg" alt="" draggable="false" />
-            <h3>该团队还没有项目</h3>
-            <p>新建一个项目，把团队 Skill 组织起来协作</p>
-          </div>
+          <AppEmptyState
+            v-else
+            :image="teamEmptyImg"
+            title="暂无项目"
+            description="可新建项目，开始组织并协作管理团队 Skill"
+          />
         </section>
 
         <!-- 团队管理（顶部与团队项目一致；信息 / 成员独立白底卡片） -->
@@ -786,53 +641,6 @@ watch(
               <li v-if="!teamStore.members.length" class="member-empty">暂无成员</li>
             </ul>
           </div>
-
-          <!-- 提交历史 / 审计（仅 owner / admin 可见） -->
-          <template v-if="canManageProjects">
-            <div class="manage-section-title">
-              提交历史 / 审计
-              <BaseSelect
-                v-if="historySkillOptions.length"
-                v-model="historyFilterSkillId"
-                class="history-filter"
-                :options="historyFilterOptions"
-                :block="false"
-                pill
-                @change="loadHistory(true)"
-              />
-            </div>
-            <div class="manage-card">
-              <ul v-if="historyItems.length" class="history-list">
-                <li v-for="h in historyItems" :key="h.id" class="history-item">
-                  <div class="history-head">
-                    <span class="history-skill">{{ h.skill_name }}</span>
-                    <span class="history-seq">v{{ versionNumberOf(h) }}</span>
-                    <span class="history-source" :class="`src-${h.source}`">{{ sourceLabel(h.source) }}</span>
-                  </div>
-                  <div class="history-summary">{{ h.change_summary || '（无变更说明）' }}</div>
-                  <div class="history-meta">
-                    <span>{{ h.created_by_name || h.created_by || '—' }}</span>
-                    <span class="dot">·</span>
-                    <span>{{ formatCommitTime(h.created_at) }}</span>
-                    <template v-if="h.resource_count">
-                      <span class="dot">·</span>
-                      <span>{{ h.resource_count }} 个资源</span>
-                    </template>
-                  </div>
-                </li>
-              </ul>
-              <div v-else-if="historyLoading" class="history-empty">加载中…</div>
-              <div v-else class="history-empty">暂无提交记录</div>
-              <button
-                v-if="historyHasMore"
-                class="history-more"
-                :disabled="historyLoading"
-                @click="loadHistory(false)"
-              >
-                {{ historyLoading ? '加载中…' : '加载更多' }}
-              </button>
-            </div>
-          </template>
         </section>
         </transition>
         </div>
@@ -854,71 +662,6 @@ watch(
       </div>
       <template #footer>
         <button class="btn-sm btn-primary" @click="createProject">创建</button>
-      </template>
-    </BaseModal>
-
-    <!-- 编辑项目信息弹窗（入口位于项目卡片） -->
-    <BaseModal
-      v-model="showEditProject"
-      title="编辑项目信息"
-      :closable="!projectSaving"
-      :close-on-overlay="!projectSaving"
-    >
-      <div class="field">
-        <label>项目名称</label>
-        <input
-          v-model="editProjectName"
-          maxlength="128"
-          placeholder="输入项目名称"
-          @keyup.enter="saveProject"
-        />
-      </div>
-      <div class="field">
-        <label>项目描述</label>
-        <textarea
-          v-model="editProjectDescription"
-          rows="4"
-          placeholder="输入项目描述（可选）"
-        ></textarea>
-      </div>
-      <template #footer>
-        <button
-          class="btn-sm btn-cancel"
-          :disabled="projectSaving"
-          @click="showEditProject = false"
-        >
-          取消
-        </button>
-        <button
-          class="btn-sm btn-primary"
-          :disabled="projectSaving || !editProjectName.trim()"
-          @click="saveProject"
-        >
-          {{ projectSaving ? '保存中…' : '保存' }}
-        </button>
-      </template>
-    </BaseModal>
-
-    <!-- 删除项目确认弹窗 -->
-    <BaseModal
-      v-model="showDeleteProject"
-      title="删除项目"
-      :closable="!deletingProject"
-      :close-on-overlay="!deletingProject"
-    >
-      <p class="confirm-text">
-        确认删除项目「<strong>{{ deleteTarget?.name }}</strong>」？
-      </p>
-      <p class="confirm-hint">
-        该项目下的 Skill 关联、部署记录与动态将一并删除，且不可恢复。
-      </p>
-      <template #footer>
-        <button class="btn-sm btn-cancel" :disabled="deletingProject" @click="showDeleteProject = false">
-          取消
-        </button>
-        <button class="btn-sm btn-danger" :disabled="deletingProject" @click="confirmRemoveProject">
-          {{ deletingProject ? '删除中…' : '确认删除' }}
-        </button>
       </template>
     </BaseModal>
 
@@ -947,7 +690,7 @@ watch(
 
     <!-- 分配权限（仅 owner）：给成员设置 管理员 / 成员 角色 -->
     <BaseModal v-model="showAssignRole" title="分配权限" width="460px">
-      <p class="assign-hint">仅所有者可调整成员角色。管理员可编辑团队信息、查看提交历史。</p>
+      <p class="assign-hint">仅所有者可调整成员角色。管理员可编辑团队信息。</p>
       <ul class="assign-list">
         <li v-for="m in teamStore.members" :key="m.user_id" class="assign-row">
           <span class="member-avatar">{{ (m.display_name || m.username || '?').slice(0, 1).toUpperCase() }}</span>
@@ -1321,66 +1064,12 @@ watch(
   border-radius: 16px;
   padding: 1.25rem 1.3rem;
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .project-card:hover {
   border-color: var(--card-border-hover);
   box-shadow: 0 8px 24px rgba(21, 23, 23, 0.07);
-  transform: translateY(-2px);
-}
-
-.project-delete {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: #9ca3af;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-
-.project-edit {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform: translateY(1px);
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: #9ca3af;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.project-card:hover .project-delete {
-  opacity: 1;
-}
-
-.project-edit:hover {
-  background: #f3f4f6;
-  color: #151717;
-}
-
-.project-delete:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #dc2626;
 }
 
 .project-error {
@@ -1392,11 +1081,6 @@ watch(
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-/* 管理者卡片悬停时右上角会出现删除按钮，预留空间避免与日期重叠 */
-.project-head.has-delete {
-  padding-right: 22px;
 }
 
 .project-title-group {
@@ -1813,86 +1497,6 @@ watch(
   flex-shrink: 0;
 }
 
-/* —— 提交历史 / 审计 —— */
-.history-filter {
-  margin-left: auto;
-}
-.history-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.history-item {
-  padding: 12px 0;
-  border-top: 1px solid #f2f3f5;
-}
-.history-item:first-child { border-top: none; padding-top: 0; }
-.history-item:last-child { padding-bottom: 0; }
-.history-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.history-skill {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #151717;
-}
-.history-seq {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #4f46e5;
-  background: #eef2ff;
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-}
-.history-source {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #6b7280;
-  background: #f3f4f6;
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-}
-.history-source.src-push { color: #ea580c; background: #fff1e6; }
-.history-source.src-restore { color: #b45309; background: #fef3c7; }
-.history-source.src-web_edit { color: #16a34a; background: #e7f8ee; }
-.history-summary {
-  font-size: 0.84rem;
-  color: #374151;
-  line-height: 1.5;
-  margin-bottom: 4px;
-}
-.history-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
-  color: #9ca3af;
-}
-.history-meta .dot { color: #d1d5db; }
-.history-empty {
-  color: #9ca3af;
-  font-size: 0.84rem;
-  text-align: center;
-  padding: 8px 0;
-}
-.history-more {
-  display: block;
-  margin: 12px auto 0;
-  padding: 0.4rem 1.1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #374151;
-  cursor: pointer;
-}
-.history-more:hover:not(:disabled) { background: #f9fafb; }
-.history-more:disabled { opacity: 0.6; cursor: default; }
-
 .empty-hint {
   text-align: center;
   color: #9ca3af;
@@ -1902,37 +1506,6 @@ watch(
 
 .empty-hint.load-error {
   color: #b45309;
-}
-
-/* 空状态插画（团队 Skill / 团队项目为空时展示） */
-.team-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 4.5rem 1rem 3rem;
-}
-
-.team-empty img {
-  width: 380px;
-  height: auto;
-  /* 插画底部有大片透明留白，用负边距把下方文字拉近 */
-  margin-bottom: -5rem;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.team-empty h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #151717;
-}
-
-.team-empty p {
-  margin: 0;
-  font-size: 0.88rem;
-  color: #9ca3af;
 }
 
 /* 通用组件 */

@@ -28,10 +28,21 @@ import type {
   ProjectDetailResponse,
   ProjectResponse,
   ProjectSkillInfo,
+  SyncChangesResponse,
   UserSkillDeploymentInfo,
 } from '@/api/projects'
 
 const NOW = '2026-06-10T08:00:00Z'
+
+/** 在真实业务路由上预览空状态：/#/?empty=1（仅本地开发模式生效）。 */
+function isEmptyPreview(): boolean {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return false
+  const hashQuery = window.location.hash.split('?')[1] ?? ''
+  return (
+    new URLSearchParams(window.location.search).get('empty') === '1' ||
+    new URLSearchParams(hashQuery).get('empty') === '1'
+  )
+}
 
 function makeItem(partial: Partial<NativeSkillItem> & { id: string }): NativeSkillItem {
   return {
@@ -194,7 +205,7 @@ export function devMockSkillList(
 ): NativeSkillListResponse {
   return {
     success: true,
-    skills: scope === 'team' ? TEAM_SKILLS : PERSONAL_SKILLS,
+    skills: isEmptyPreview() ? [] : scope === 'team' ? TEAM_SKILLS : PERSONAL_SKILLS,
   }
 }
 
@@ -426,7 +437,10 @@ export function devMockMembers(teamId: string): MemberListResponse {
 }
 
 export function devMockProjectList(teamId: string): ProjectListResponse {
-  return { success: true, projects: DEV_PROJECTS[teamId] ?? [] }
+  return {
+    success: true,
+    projects: isEmptyPreview() ? [] : DEV_PROJECTS[teamId] ?? [],
+  }
 }
 
 export function devMockUpdateProject(
@@ -579,6 +593,21 @@ function devMockProjectSkills(projectId: string): ProjectSkillInfo[] {
         tool_type: 'cursor',
       }),
     }),
+    // 7) 冲突 → 展示 AI 合并状态
+    makeProjectSkill({
+      skill_id: 'team-a11y-audit',
+      display_name: 'A11y Audit',
+      description: '扫描页面可访问性问题，并生成可执行的修复建议与验证清单。',
+      version: 2,
+      deployment: makeDeployment(projectId, 'team-a11y-audit', {
+        status: 'conflict',
+        tracking_enabled: true,
+        local_dirty: true,
+        repo_hash: 'remoteconflict2',
+        installed_hash: 'localconflict1',
+        tool_type: 'cursor',
+      }),
+    }),
   ]
 }
 
@@ -586,10 +615,204 @@ export function devMockProjectDetail(projectId: string): ProjectDetailResponse {
   const project =
     findProjectAnyTeam(projectId) ??
     makeProject({ id: projectId, team_id: 'dev-team', name: '示例项目' })
-  const skills = devMockProjectSkills(projectId)
+  const skills = isEmptyPreview() ? [] : devMockProjectSkills(projectId)
   return {
     success: true,
     project: { ...project, skill_count: skills.length },
     skills,
+  }
+}
+
+export function devMockProjectChanges(projectId: string): SyncChangesResponse {
+  if (isEmptyPreview()) return { success: true, changes: [] }
+
+  const makeChange = (
+    id: string,
+    skillId: string,
+    skillName: string,
+    action: string,
+    createdAt: string,
+    partial: Partial<SyncChangesResponse['changes'][number]> = {},
+  ): SyncChangesResponse['changes'][number] => ({
+    id: `${projectId}-${id}`,
+    skill_id: skillId,
+    deployment_id: `dep-${projectId}-${skillId}`,
+    user_id: 'dev-user',
+    user_display_name: '开发者',
+    skill_display_name: skillName,
+    source: 'user_deployment',
+    action,
+    version: 1,
+    diff_summary: '',
+    change_items: [],
+    created_at: createdAt,
+    ...partial,
+  })
+
+  return {
+    success: true,
+    changes: [
+      makeChange(
+        'activity-12',
+        'team-design-tokens',
+        'Design Tokens',
+        'pushed',
+        '2026-06-10T08:42:00Z',
+        {
+          version: 6,
+          diff_summary: '调整品牌主色与按钮圆角，新增 3 个语义化颜色变量',
+          change_items: [
+            {
+              kind: 'field',
+              path: 'config.primaryColor',
+              label: '品牌主色',
+              old: '#4f46e5',
+              new: '#151717',
+            },
+            {
+              kind: 'resource',
+              path: 'tokens/semantic.css',
+              label: '语义颜色变量',
+              change: 'modified',
+            },
+          ],
+        },
+      ),
+      makeChange(
+        'activity-11',
+        'team-a11y-audit',
+        'A11y Audit',
+        'merged',
+        '2026-06-10T08:28:00Z',
+        {
+          user_id: 'dev-member-02',
+          user_display_name: '林晓',
+          version: 3,
+          diff_summary: 'AI 合并了规则配置与最新扫描提示词',
+        },
+      ),
+      makeChange(
+        'activity-10',
+        'team-pr-summarizer',
+        'PR Summarizer',
+        'pulled',
+        '2026-06-10T08:12:00Z',
+        {
+          user_id: 'dev-member-01',
+          user_display_name: '周远',
+          version: 4,
+          source: 'team_repo',
+          diff_summary: '更新本地到团队最新',
+        },
+      ),
+      makeChange(
+        'activity-09',
+        'team-release-notes',
+        'Release Notes',
+        'resumed',
+        '2026-06-10T07:54:00Z',
+        { diff_summary: '恢复跟踪' },
+      ),
+      makeChange(
+        'activity-08',
+        'team-code-reviewer',
+        'Code Reviewer',
+        'stopped',
+        '2026-06-10T07:41:00Z',
+        { diff_summary: '停止跟踪' },
+      ),
+      makeChange(
+        'activity-07',
+        'team-a11y-audit',
+        'A11y Audit',
+        'conflict',
+        '2026-06-10T07:25:00Z',
+        {
+          user_id: 'dev-member-02',
+          user_display_name: '林晓',
+          version: 2,
+          diff_summary: '团队仓库已更新，推送被拦截',
+        },
+      ),
+      makeChange(
+        'activity-06',
+        'team-icon-forge',
+        'Icon Forge',
+        'missing',
+        '2026-06-10T07:03:00Z',
+        { version: 2, diff_summary: '部署路径缺失' },
+      ),
+      makeChange(
+        'activity-05',
+        'team-pr-summarizer',
+        'PR Summarizer',
+        'updated',
+        '2026-06-09T10:46:00Z',
+        {
+          user_id: 'dev-member-01',
+          user_display_name: '周远',
+          source: 'team_repo',
+          version: 4,
+          diff_summary: '补充风险项与测试计划输出要求',
+          change_items: [
+            {
+              kind: 'body',
+              path: 'SKILL.md',
+              label: '正文',
+              added_lines: 4,
+              removed_lines: 1,
+              diff: '@@ -1,2 +1,5 @@\n-生成 PR 摘要\n+生成结构化 PR 摘要\n+列出风险项\n+补充测试计划',
+            },
+          ],
+        },
+      ),
+      makeChange(
+        'activity-04',
+        'team-code-reviewer',
+        'Code Reviewer',
+        'deployed',
+        '2026-06-09T09:32:00Z',
+        {
+          version: 2,
+          diff_summary: '部署到 Cursor 项目目录',
+        },
+      ),
+      makeChange(
+        'activity-03',
+        'team-design-tokens',
+        'Design Tokens',
+        'linked',
+        '2026-06-09T09:12:00Z',
+        {
+          deployment_id: null,
+          source: 'project_skill',
+          version: 1,
+        },
+      ),
+      makeChange(
+        'activity-02',
+        'legacy-copywriter',
+        'Legacy Copywriter',
+        'unlinked',
+        '2026-06-09T08:58:00Z',
+        {
+          deployment_id: null,
+          source: 'project_skill',
+          user_id: 'dev-member-01',
+          user_display_name: '周远',
+        },
+      ),
+      makeChange(
+        'activity-01',
+        'team-code-reviewer',
+        'Code Reviewer',
+        'linked',
+        '2026-06-09T08:40:00Z',
+        {
+          deployment_id: null,
+          source: 'project_skill',
+        },
+      ),
+    ],
   }
 }

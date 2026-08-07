@@ -12,11 +12,13 @@ export interface SkillSyncEvent {
   type: string
   project_id: string
   skill_id: string
+  deployment_id?: string | null
   version: number
   content_hash: string
   user_id: string
   user_display_name: string
   skill_display_name: string
+  source?: string
   timestamp: string
   change_items?: ChangeItem[]
   diff_summary?: string
@@ -117,9 +119,14 @@ export function useSkillSync(
     if (evt.user_display_name && evt.type.startsWith('skill.')) {
       const msg = {
         id: `${evt.skill_id}-${evt.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+        skill_id: evt.skill_id,
+        deployment_id: evt.deployment_id,
+        user_id: evt.user_id,
         user_display_name: evt.user_display_name,
         skill_display_name: evt.skill_display_name || evt.skill_id,
+        source: evt.source,
         action: evt.type.replace('skill.', ''),
+        version: evt.version,
         timestamp: evt.timestamp,
         change_items: evt.change_items,
         diff_summary: evt.diff_summary,

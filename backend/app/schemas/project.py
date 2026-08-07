@@ -155,9 +155,11 @@ class SyncStatusResponse(BaseModel):
 class ChangeLogItem(BaseModel):
     id: str
     skill_id: str
+    deployment_id: Optional[str] = None
     user_id: str
     user_display_name: str = ""
     skill_display_name: str = ""
+    source: str = "team_repo"
     action: str
     version: int
     diff_summary: str = ""

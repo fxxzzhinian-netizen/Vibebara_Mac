@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppTopNav from '@/components/AppTopNav.vue'
+import AppEmptyState from '@/components/AppEmptyState.vue'
 import { toast } from '@/composables/useToast'
 import { confirmDialog } from '@/composables/useConfirmDialog'
 import { promptInput } from '@/composables/useInputDialog'
@@ -397,11 +398,12 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        <div v-else class="empty-state">
-          <div class="empty-illu"><img :src="emptyImg" alt="" draggable="false" /></div>
-          <h2>市场还没有公开的 Skill</h2>
-          <p>把你的 Skill 发布到市场，通过审核后这里就会出现</p>
-        </div>
+        <AppEmptyState
+          v-else
+          :image="emptyImg"
+          title="暂无 Skill"
+          description="可添加 Skill，开始构建并丰富你的专属技能库"
+        />
       </template>
 
       <!-- 我的发布 -->
@@ -431,11 +433,12 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        <div v-else class="empty-state">
-          <div class="empty-illu"><img :src="emptyImg" alt="" draggable="false" /></div>
-          <h2>你还没有发布过 Skill</h2>
-          <p>在 SKILL 仓库或团队 Skill 详情页点击「发布到市场」</p>
-        </div>
+        <AppEmptyState
+          v-else
+          :image="emptyImg"
+          title="暂无 Skill"
+          description="发布后的 Skill 将显示在这里"
+        />
       </template>
 
       <!-- SKILL 管理员：审核与管理员设置合并在同一页面 -->
@@ -1023,39 +1026,6 @@ onMounted(() => {
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-
-/* —— 空状态 —— */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 5rem 1rem;
-}
-
-.empty-illu {
-  margin-bottom: -3rem;
-}
-
-.empty-illu img {
-  width: 280px;
-  height: auto;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.empty-state h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: #151717;
-}
-
-.empty-state p {
-  margin: 0 0 1.5rem;
-  font-size: 0.88rem;
-  color: #9ca3af;
 }
 
 @media (max-width: 768px) {

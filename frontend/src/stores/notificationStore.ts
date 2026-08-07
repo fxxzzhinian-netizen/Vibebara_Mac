@@ -4,9 +4,14 @@ import type { ChangeItem } from '@/api/projects'
 
 export interface NotificationMessage {
   id: string
+  skill_id: string
+  deployment_id?: string | null
+  user_id: string
   user_display_name: string
   skill_display_name: string
+  source?: string
   action: string
+  version?: number
   timestamp: string
   change_items?: ChangeItem[]
   diff_summary?: string
@@ -23,10 +28,19 @@ const ACTION_LABELS: Record<string, string> = {
   conflict: '推送冲突',
   linked: '关联了',
   unlinked: '移除了',
+  resumed: '恢复了跟踪',
+  stopped: '停止了跟踪',
+  missing: '检测到部署路径缺失',
+  promoted: '提交了部署内容',
+  auto_promoted: '自动同步了部署内容',
+}
+
+export function actionLabel(action: string): string {
+  return ACTION_LABELS[action] || '操作了'
 }
 
 export function formatNotification(msg: NotificationMessage): string {
-  const verb = ACTION_LABELS[msg.action] || '操作了'
+  const verb = actionLabel(msg.action)
   const base = `${msg.user_display_name} ${verb} ${msg.skill_display_name}`
   if (msg.diff_summary && msg.diff_summary !== '无改动') {
     return `${base}：${msg.diff_summary}`

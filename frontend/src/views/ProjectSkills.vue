@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/authStore'
 import { useProjectSyncStore } from '@/stores/projectSyncStore'
 import {
   listNativeSkills,
@@ -9,12 +10,17 @@ import {
   type SkillVersionItem,
 } from '@/api/skillStore'
 import { getPlatformInstalledStatus } from '@/api/orchestration'
-import { useNotificationStore, formatNotification } from '@/stores/notificationStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillSync } from '@/composables/useSkillSync'
 import { promptInput } from '@/composables/useInputDialog'
 import { confirmDialog } from '@/composables/useConfirmDialog'
 import { toast } from '@/composables/useToast'
+import { useSlideIndicator } from '@/composables/useSlideIndicator'
 import AppTopNav from '@/components/AppTopNav.vue'
+import AppEmptyState from '@/components/AppEmptyState.vue'
+import ProjectActivityPanel from '@/components/ProjectActivityPanel.vue'
+import ProjectSkillActionIcon from '@/components/ProjectSkillActionIcon.vue'
+import ProjectSkillStatusIcon from '@/components/ProjectSkillStatusIcon.vue'
 import FolderPicker from '@/components/FolderPicker.vue'
 import SyncStatusBadge from '@/components/SyncStatusBadge.vue'
 import BaseModal from '@/components/BaseModal.vue'
@@ -37,10 +43,58 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const projectStore = useProjectSyncStore()
 const notificationStore = useNotificationStore()
 
 const projectId = computed(() => route.params.id as string)
+type ProjectNavSection = 'basic' | 'skills' | 'activity' | 'management'
+const activeProjectNav = ref<ProjectNavSection>('basic')
+const projectNavRef = ref<HTMLElement | null>(null)
+const { style: projectNavSliderStyle, ready: projectNavSliderReady } = useSlideIndicator({
+  container: projectNavRef,
+  activeSelector: '.project-nav-item.active',
+  axis: 'y',
+  trigger: () => activeProjectNav.value,
+})
+const projectMetrics = computed(() => {
+  const project = projectStore.currentProject
+  const skills = projectStore.projectSkills
+  return [
+    { label: '关联 Skill', value: project?.skill_count ?? skills.length },
+    {
+      label: '已部署',
+      value: skills.filter((skill) => skill.deployment && skill.deployment.status !== 'missing').length,
+    },
+    { label: '待提交', value: project?.pending_commit_count ?? 0 },
+    { label: '待更新', value: project?.pending_update_count ?? 0 },
+    {
+      label: '冲突',
+      value: skills.filter((skill) => skill.deployment?.status === 'conflict').length,
+    },
+    {
+      label: '跟踪中',
+      value: skills.filter((skill) => skill.deployment?.tracking_enabled).length,
+    },
+  ]
+})
+const activeSkillStatusFilter = ref('all')
+const skillStatusFilters = [
+  { value: 'all', label: '全部' },
+  { value: 'none', label: '未部署' },
+  { value: 'synced', label: '已同步' },
+  { value: 'changed', label: '待推送' },
+  { value: 'outdated', label: '待更新' },
+  { value: 'conflict', label: '冲突' },
+  { value: 'missing', label: '路径缺失' },
+  { value: 'untracked', label: '停止跟踪' },
+]
+const filteredProjectSkills = computed(() => {
+  if (activeSkillStatusFilter.value === 'all') return projectStore.projectSkills
+  return projectStore.projectSkills.filter(
+    (skill) => (skill.deployment?.status || 'none') === activeSkillStatusFilter.value,
+  )
+})
 
 const { connected } = useSkillSync(() => projectId.value, async () => {
   await loadMessageHistory()
@@ -87,46 +141,11 @@ const detailMsg = computed(() =>
   notificationStore.messages.find((m) => m.id === detailId.value) || null,
 )
 
-// —— Skill 列表滚动：超过 4 个时，列表区固定为「4 张卡片」高度并出现滚动条 ——
-const SKILL_VISIBLE_LIMIT = 4
-const skillListRef = ref<HTMLElement | null>(null)
-const skillListMaxHeight = ref('')
-
-/** 量取前 4 张卡片 + 间距的真实高度作为列表上限；不足 4 张则不限制。 */
-function updateSkillListMaxHeight() {
-  const el = skillListRef.value
-  if (!el) {
-    skillListMaxHeight.value = ''
-    return
-  }
-  const cards = el.querySelectorAll<HTMLElement>('.skill-card')
-  if (cards.length <= SKILL_VISIBLE_LIMIT) {
-    skillListMaxHeight.value = ''
-    return
-  }
-  const gap = parseFloat(getComputedStyle(el).rowGap || '12') || 12
-  let h = 0
-  for (let i = 0; i < SKILL_VISIBLE_LIMIT; i++) {
-    h += cards[i].offsetHeight
-  }
-  h += gap * (SKILL_VISIBLE_LIMIT - 1)
-  skillListMaxHeight.value = `${Math.ceil(h)}px`
-}
-
-async function scheduleSkillListMeasure() {
-  await nextTick()
-  updateSkillListMaxHeight()
-}
-
-watch(() => projectStore.projectSkills.length, scheduleSkillListMeasure)
-
 onMounted(async () => {
-  window.addEventListener('resize', updateSkillListMaxHeight)
   await projectStore.selectProject(projectId.value)
   await loadTeamRepoSkills()
   await loadMessageHistory()
   await refreshLocalStatuses()
-  scheduleSkillListMeasure()
 
   // 轮询兜底：即使 WebSocket 不可用，项目动态与本地状态也能准实时更新，无需手动刷新
   pollTimer = setInterval(async () => {
@@ -136,7 +155,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', updateSkillListMaxHeight)
   if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = undefined
@@ -148,9 +166,14 @@ async function loadMessageHistory() {
   if (res?.success && res.changes) {
     const items = res.changes.map((c: any) => ({
       id: c.id,
+      skill_id: c.skill_id,
+      deployment_id: c.deployment_id,
+      user_id: c.user_id,
       user_display_name: c.user_display_name || c.user_id,
       skill_display_name: c.skill_display_name || c.skill_id,
+      source: c.source,
       action: c.action,
+      version: c.version,
       timestamp: c.created_at || '',
       change_items: c.change_items || [],
       diff_summary: c.diff_summary || '',
@@ -255,6 +278,7 @@ async function addSkillToProject(skillId: string) {
   } else {
     showAddSkill.value = false
     toast.success('已添加 Skill 到项目')
+    await loadMessageHistory()
   }
 }
 
@@ -276,6 +300,7 @@ async function removeSkill(skillId: string) {
     toast.error(res.error || '移除失败')
   } else {
     toast.success('已从项目移除该 Skill')
+    await loadMessageHistory()
   }
 }
 
@@ -327,11 +352,18 @@ async function submitDeploy() {
   const openedTool = deployTool.value
   const openedPath = deployPath.value.trim()
   showDeployModal.value = false
+  await loadMessageHistory()
   await promptOpenAfterDeploy(openedTool, openedPath)
 }
 
 async function stopTracking(deploymentId: string) {
-  await projectStore.stopTracking(deploymentId)
+  const res = await projectStore.stopTracking(deploymentId)
+  if (!res.success) {
+    toast.error(res.error || '停止跟踪失败')
+    return
+  }
+  toast.success('已停止跟踪')
+  await loadMessageHistory()
 }
 
 async function resumeTracking(deploymentId: string) {
@@ -349,6 +381,7 @@ async function resumeTracking(deploymentId: string) {
   delete next[deploymentId]
   redeployHintIds.value = next
   toast.success('已恢复跟踪')
+  await loadMessageHistory()
   await refreshLocalStatuses()
 }
 
@@ -582,6 +615,18 @@ function statusLabel(status?: string): string {
   return labels[status || ''] || '未部署'
 }
 
+function statusTagLabel(status?: string): string {
+  const labels: Record<string, string> = {
+    synced: 'Skill 已同步',
+    changed: '本地改动待推送',
+    outdated: '团队版本待更新',
+    conflict: 'Skill 存在冲突',
+    missing: '部署路径缺失',
+    untracked: 'Skill 已停止跟踪',
+  }
+  return labels[status || ''] || 'Skill 未部署'
+}
+
 function formatTime(ts: string): string {
   if (!ts) return ''
   const d = new Date(ts)
@@ -589,8 +634,25 @@ function formatTime(ts: string): string {
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+function formatProjectDate(ts: string | null | undefined): string {
+  if (!ts) return '--'
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ts
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function goBack() {
   router.push('/team/projects')
+}
+
+function selectProjectSection(section: ProjectNavSection) {
+  activeProjectNav.value = section
 }
 </script>
 
@@ -599,6 +661,46 @@ function goBack() {
     <AppTopNav />
 
     <div class="content">
+      <div class="project-layout">
+        <aside class="project-sidebar" aria-label="项目导航">
+          <nav ref="projectNavRef" class="project-nav">
+            <span
+              class="project-nav-slider"
+              :class="{ ready: projectNavSliderReady }"
+              :style="projectNavSliderStyle"
+            ></span>
+            <button
+              class="project-nav-item"
+              :class="{ active: activeProjectNav === 'basic' }"
+              @click="selectProjectSection('basic')"
+            >
+              项目信息
+            </button>
+            <button
+              class="project-nav-item"
+              :class="{ active: activeProjectNav === 'skills' }"
+              @click="selectProjectSection('skills')"
+            >
+              项目 SKILL
+            </button>
+            <button
+              class="project-nav-item"
+              :class="{ active: activeProjectNav === 'activity' }"
+              @click="selectProjectSection('activity')"
+            >
+              项目动态
+            </button>
+            <button
+              class="project-nav-item"
+              :class="{ active: activeProjectNav === 'management' }"
+              @click="selectProjectSection('management')"
+            >
+              项目管理
+            </button>
+          </nav>
+        </aside>
+
+        <main class="project-workspace">
       <!-- 顶部栏：参考 SKILL 详情（圆形返回 + 标题 + 同步徽章） -->
       <div class="toolbar">
         <div class="toolbar-left">
@@ -613,142 +715,174 @@ function goBack() {
         </div>
       </div>
 
-      <!-- 项目信息 -->
-      <div class="project-info">
-        <p class="desc">{{ projectStore.currentProject?.description || '暂无描述' }}</p>
+      <div v-show="activeProjectNav === 'basic'" class="project-info project-route-panel">
+        <div class="project-metrics">
+          <div v-for="metric in projectMetrics" :key="metric.label" class="project-metric">
+            <strong>{{ metric.value }}</strong>
+            <span>{{ metric.label }}</span>
+          </div>
+        </div>
+
+        <div class="project-detail-form">
+          <div class="project-detail-field">
+            <span class="project-detail-label">名称</span>
+            <div class="project-detail-input">
+              {{ projectStore.currentProject?.name || '--' }}
+            </div>
+          </div>
+          <div class="project-detail-field">
+            <span class="project-detail-label">描述</span>
+            <div class="project-detail-textarea">
+              {{ projectStore.currentProject?.description || '暂无描述' }}
+            </div>
+          </div>
+          <div class="project-detail-meta">
+            <span>创建者&nbsp; {{ projectStore.currentProject?.created_by || '--' }}</span>
+            <span>创建&nbsp; {{ formatProjectDate(projectStore.currentProject?.created_at) }}</span>
+            <span>更新&nbsp; {{ formatProjectDate(projectStore.currentProject?.updated_at) }}</span>
+            <span>最近提交&nbsp; {{ formatProjectDate(projectStore.currentProject?.last_commit_at) }}</span>
+          </div>
+        </div>
       </div>
 
-      <!-- Skill 列表 -->
-      <div class="section-header">
-        <h3>项目 Skill</h3>
-        <button class="btn-sm btn-primary" @click="openAddSkill">
-          + 关联 Skill
-        </button>
-      </div>
+      <div v-show="activeProjectNav !== 'basic'" class="project-main">
+        <section v-show="activeProjectNav === 'skills'" class="project-route-panel">
+        <!-- Skill 列表 -->
+        <div class="skill-toolbar">
+          <div class="skill-filters" aria-label="按 Skill 状态筛选">
+            <button
+              v-for="filter in skillStatusFilters"
+              :key="filter.value"
+              :class="{ active: activeSkillStatusFilter === filter.value }"
+              @click="activeSkillStatusFilter = filter.value"
+            >
+              {{ filter.label }}
+            </button>
+          </div>
+          <button class="btn-sm btn-primary" @click="openAddSkill">
+            + 关联 Skill
+          </button>
+        </div>
 
-      <div
-        ref="skillListRef"
-        class="skill-list"
-        :class="{ 'is-scrollable': !!skillListMaxHeight }"
-        :style="skillListMaxHeight ? { maxHeight: skillListMaxHeight } : undefined"
-      >
-        <div
-          v-for="skill in projectStore.projectSkills"
-          :key="skill.skill_id"
-          class="skill-card"
-        >
-          <div class="skill-main">
-            <div class="skill-name-row">
-              <h4 class="skill-name" :title="'查看 ' + (skill.display_name || skill.skill_id) + ' 详情'" @click="router.push('/skills/' + skill.skill_id)">
-                {{ skill.display_name || skill.skill_id }}
-              </h4>
-              <span v-if="hasLocalChanges(skill.deployment)" class="dirty-badge">
-                有改动待推送
+        <div class="skill-list">
+          <article
+            v-for="skill in filteredProjectSkills"
+            :key="skill.skill_id"
+            class="skill-card"
+            role="link"
+            tabindex="0"
+            @click="router.push('/skills/' + skill.skill_id)"
+            @keydown.enter="router.push('/skills/' + skill.skill_id)"
+          >
+            <div class="skill-card-head">
+              <span
+                class="skill-status"
+                :class="`status-${skill.deployment?.status || 'none'}`"
+                :title="statusLabel(skill.deployment?.status)"
+              >
+                <ProjectSkillStatusIcon :status="skill.deployment?.status" />
               </span>
+              <div class="skill-title-block">
+                <h4 class="skill-name">{{ skill.display_name || skill.skill_id }}</h4>
+                <span
+                  class="skill-state-tag"
+                  :class="`status-${skill.deployment?.status || 'none'}`"
+                >
+                  {{ statusTagLabel(skill.deployment?.status) }}
+                </span>
+              </div>
             </div>
             <p :title="skill.description || ''">{{ skill.description || '暂无描述' }}</p>
-            <div class="deployment-line" :class="skill.deployment?.status || 'none'" :title="skill.deployment?.install_path || ''">
-              {{ statusLabel(skill.deployment?.status) }}
-              <template v-if="skill.deployment">
-                · {{ skill.deployment.tool_type }}
-                · {{ skill.deployment.install_path }}
-              </template>
-            </div>
-          </div>
-          <div class="skill-right">
-          <div class="skill-meta">
-            <span class="version">v{{ skill.version }}</span>
-            <span class="hash" :title="skill.content_hash">
-              {{ skill.content_hash?.slice(0, 8) || '--' }}
-            </span>
-          </div>
-          <div class="skill-actions">
-            <button class="btn-sm btn-soft" @click="router.push('/skills/' + skill.skill_id)">详情</button>
-            <button
-              v-if="!skill.deployment"
-              class="btn-sm btn-primary"
-              @click="openDeploy(skill.skill_id)"
-            >
-              部署
-            </button>
-            <button
-              v-if="skill.deployment?.tracking_enabled && hasLocalChanges(skill.deployment)"
-              class="btn-sm btn-primary"
-              :disabled="pushingId === skill.deployment.id"
-              @click="pushDeploy(skill.deployment.id)"
-            >
-              {{ pushingId === skill.deployment.id ? '推送中...' : '推送' }}
-            </button>
-            <button
-              v-if="skill.deployment && skill.deployment.status === 'conflict'"
-              class="btn-sm btn-merge"
-              :disabled="mergingId === skill.deployment.id"
-              @click="openMerge(skill.deployment)"
-            >
-              {{ mergingId === skill.deployment.id ? '分析中...' : 'AI 合并' }}
-            </button>
-            <button
-              v-if="skill.deployment && ['outdated', 'conflict'].includes(skill.deployment.status)"
-              class="btn-sm btn-primary"
-              :disabled="pullingId === skill.deployment.id"
-              @click="pullUpdate(skill.deployment.id, skill.deployment.status)"
-            >
-              {{ pullingId === skill.deployment.id ? '更新中...' : '更新本地' }}
-            </button>
-            <button
-              v-if="skill.deployment && !skill.deployment.tracking_enabled && skill.deployment.status !== 'missing' && !redeployHintIds[skill.deployment.id]"
-              class="btn-sm btn-primary"
-              @click="resumeTracking(skill.deployment.id)"
-            >
-              恢复跟踪
-            </button>
-            <button
-              v-if="skill.deployment && (skill.deployment.status === 'missing' || redeployHintIds[skill.deployment.id])"
-              class="btn-sm btn-primary"
-              @click="openDeploy(skill.skill_id)"
-            >
-              重新部署
-            </button>
-            <button
-              v-if="skill.deployment?.tracking_enabled"
-              class="btn-sm btn-soft"
-              @click="stopTracking(skill.deployment.id)"
-            >
-              停止跟踪
-            </button>
-            <button class="btn-sm btn-danger" @click="removeSkill(skill.skill_id)">移除</button>
-          </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="projectStore.projectSkills.length === 0" class="empty-hint">
-        暂无关联 Skill，点击"+ 关联 Skill"添加
-      </div>
-
-      <!-- 项目动态：与「项目 Skill」同级，标题置于卡片之外 -->
-      <div class="section-header section-header-log">
-        <h3>项目动态</h3>
-      </div>
-      <div class="message-log">
-        <div v-if="notificationStore.messages.length === 0" class="empty-hint">
-          暂无动态
-        </div>
-        <ul v-else>
-          <li v-for="msg in notificationStore.messages.slice(0, 20)" :key="msg.id">
-            <div class="msg-row">
-              <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
-              <span class="msg-text">{{ formatNotification(msg) }}</span>
+            <div class="skill-card-actions" @click.stop>
               <button
-                v-if="msg.change_items && msg.change_items.length"
-                class="detail-btn"
-                @click="openDetail(msg.id)"
+                v-if="!skill.deployment"
+                @click="openDeploy(skill.skill_id)"
               >
-                详情
+                <ProjectSkillActionIcon action="deploy" />
+                部署
+              </button>
+              <button
+                v-if="skill.deployment?.tracking_enabled && skill.deployment.status !== 'conflict' && hasLocalChanges(skill.deployment)"
+                :disabled="pushingId === skill.deployment.id"
+                @click="pushDeploy(skill.deployment.id)"
+              >
+                <ProjectSkillActionIcon action="push" />
+                {{ pushingId === skill.deployment.id ? '推送中' : '推送' }}
+              </button>
+              <button
+                v-if="skill.deployment?.status === 'conflict'"
+                :disabled="mergingId === skill.deployment.id"
+                @click="openMerge(skill.deployment)"
+              >
+                <ProjectSkillActionIcon action="merge" />
+                {{ mergingId === skill.deployment.id ? '分析中' : 'AI 合并' }}
+              </button>
+              <button
+                v-if="skill.deployment && ['outdated', 'conflict'].includes(skill.deployment.status)"
+                :disabled="pullingId === skill.deployment.id"
+                @click="pullUpdate(skill.deployment.id, skill.deployment.status)"
+              >
+                <ProjectSkillActionIcon action="pull" />
+                {{ pullingId === skill.deployment.id ? '更新中' : '更新本地' }}
+              </button>
+              <button
+                v-if="skill.deployment && !skill.deployment.tracking_enabled && skill.deployment.status !== 'missing' && !redeployHintIds[skill.deployment.id]"
+                @click="resumeTracking(skill.deployment.id)"
+              >
+                <ProjectSkillActionIcon action="resume" />
+                恢复跟踪
+              </button>
+              <button
+                v-if="skill.deployment && (skill.deployment.status === 'missing' || redeployHintIds[skill.deployment.id])"
+                @click="openDeploy(skill.skill_id)"
+              >
+                <ProjectSkillActionIcon action="redeploy" />
+                重新部署
+              </button>
+              <button
+                v-if="skill.deployment?.tracking_enabled && skill.deployment.status === 'synced'"
+                @click="stopTracking(skill.deployment.id)"
+              >
+                <ProjectSkillActionIcon action="stop" />
+                停止跟踪
+              </button>
+              <button class="danger" @click="removeSkill(skill.skill_id)">
+                <ProjectSkillActionIcon action="remove" />
+                移除
               </button>
             </div>
-          </li>
-        </ul>
+          </article>
+        </div>
+
+        <div
+          v-if="projectStore.projectSkills.length > 0 && filteredProjectSkills.length === 0"
+          class="skill-filter-empty"
+        >
+          当前状态下暂无 Skill
+        </div>
+
+        <AppEmptyState
+          v-if="projectStore.projectSkills.length === 0"
+          compact
+          title="暂无 Skill"
+          description="点击右上角关联 Skill，将团队 Skill 添加到项目"
+        />
+        </section>
+
+        <section v-show="activeProjectNav === 'activity'" class="project-route-panel">
+        <ProjectActivityPanel
+          :project="projectStore.currentProject"
+          :skills="projectStore.projectSkills"
+          :messages="notificationStore.messages"
+          :current-user-id="authStore.user?.id"
+          @detail="openDetail"
+        />
+        </section>
+
+        <section v-show="activeProjectNav === 'management'" class="project-route-panel">
+        </section>
+      </div>
+        </main>
       </div>
     </div>
 
@@ -914,7 +1048,7 @@ function goBack() {
   background: transparent;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
 }
 
 .toolbar-left {
@@ -954,15 +1088,232 @@ function goBack() {
 }
 
 .content {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 1.5rem 24px 2rem;
+  padding: 2.75rem 24px 2rem;
 }
 
-.project-info .desc {
+.project-layout {
+  width: 100%;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  column-gap: 1.25rem;
+  align-items: start;
+}
+
+.project-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: stretch;
+  min-height: calc(100vh - 176px);
+  margin-top: 66px;
+  padding: 0.5rem;
+  box-sizing: border-box;
+  background: #eef0f3;
+  border: 1px solid #ebedf0;
+  border-radius: 14px;
+}
+
+.project-nav {
+  position: sticky;
+  top: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.project-nav button {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  padding: 0.72rem 0.8rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
   color: #6b7280;
-  font-size: 0.88rem;
-  margin: 0 0 24px;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.project-nav-slider {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 0;
+  border-radius: 9px;
+  background: #151717;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, height;
+}
+
+.project-nav-slider.ready {
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+
+.project-nav button:hover:not(.active) {
+  background: #e3e6eb;
+  color: #151717;
+}
+
+.project-nav button.active {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.project-nav button:focus-visible {
+  outline: 2px solid #151717;
+  outline-offset: 3px;
+}
+
+.project-workspace {
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.toolbar {
+  width: calc(100% + 196px);
+  margin-left: -196px;
+}
+
+.toolbar-left {
+  margin-left: 0.5rem;
+}
+
+.project-info {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.toolbar {
+  scroll-margin-top: 92px;
+}
+
+.project-main {
+  width: 100%;
+  min-width: 0;
+}
+
+.project-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  min-height: 96px;
+  padding: 12px 10px;
+  box-sizing: border-box;
+  background: #eef0f3;
+  border: 1px solid #ebedf0;
+  border-radius: 14px;
+}
+
+.project-metric {
+  position: relative;
+  min-width: 0;
+  margin: 0 14px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  border-radius: 10px;
+  text-align: center;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.project-metric:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -14px;
+  bottom: 0;
+  width: 2px;
+  background: #d6dae0;
+}
+
+.project-metric:hover {
+  background: #151717;
+  box-shadow: 0 6px 16px rgba(21, 23, 23, 0.2);
+}
+
+.project-metric strong {
+  color: #1f2328;
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-metric span {
+  color: #8b929b;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.project-metric:hover strong,
+.project-metric:hover span {
+  color: #ffffff;
+}
+
+.project-detail-form {
+  width: 100%;
+}
+
+.project-detail-field + .project-detail-field {
+  margin-top: 14px;
+}
+
+.project-detail-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #606873;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.project-detail-input,
+.project-detail-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  background: #eef0f3;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #4b5563;
+  font-size: 0.86rem;
+}
+
+.project-detail-input {
+  min-height: 40px;
+  padding: 10px 12px;
+}
+
+.project-detail-textarea {
+  min-height: 250px;
+  padding: 12px;
+  line-height: 1.65;
+}
+
+.project-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  color: #8b929b;
+  font-size: 0.72rem;
 }
 
 .section-header {
@@ -980,73 +1331,320 @@ function goBack() {
   color: #151717;
 }
 
-.skill-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* 超过 4 个 Skill 时固定高度并滚动；留出右侧间距避免滚动条压住卡片 */
-.skill-list.is-scrollable {
-  overflow-y: auto;
-  padding-right: 6px;
-}
-
-.skill-card {
+.skill-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  background: #ffffff;
-  border: 1px solid #ebedf0;
-  border-radius: 16px;
-  padding: 16px 20px;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  margin-bottom: 18px;
 }
 
-/* Skill 名称 + 「有改动待推送」角标同行（角标在名称右侧） */
-.skill-name-row {
+.skill-filters {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
-.skill-card:hover {
-  border-color: #d1d5db;
-  box-shadow: 0 4px 16px rgba(21, 23, 23, 0.05);
+.skill-filters button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 17px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #6b7280;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.skill-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.skill-main h4 {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
+.skill-filters button:hover:not(.active) {
+  background: #f6f7f8;
   color: #151717;
 }
 
-.skill-main h4.skill-name {
-  cursor: pointer;
-  transition: color 0.15s ease;
+.skill-filters button.active {
+  background: #eef0f3;
+  color: #151717;
+  font-weight: 700;
 }
 
-.skill-main h4.skill-name:hover {
-  color: #4f46e5;
-  text-decoration: underline;
+.skill-toolbar > .btn-sm {
+  flex: none;
 }
 
-.skill-main p {
-  margin: 0;
+.skill-filter-empty {
+  padding: 54px 20px;
+  color: #9ca3af;
   font-size: 0.84rem;
-  line-height: 1.5;
-  color: #6b7280;
-  /* 描述禁止换行：单行展示，超出截断省略号 */
+  text-align: center;
+}
+
+.skill-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+
+.skill-card {
+  position: relative;
+  min-height: 150px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 2px solid #151717;
+  border-radius: 18px;
+  padding: 20px 22px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.skill-card:hover {
+  border-color: #151717;
+  box-shadow: 0 6px 18px rgba(21, 23, 23, 0.07);
+}
+
+.skill-card:focus-visible {
+  outline: 2px solid #151717;
+  outline-offset: 3px;
+}
+
+.skill-status {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  --status-bg: #dbe7ff;
+  position: relative;
+  background: #ffffff;
+  color: #8b929b;
+  border: 4px solid #ffffff;
+  outline: 2px solid #151717;
+  box-sizing: border-box;
+}
+
+.skill-status::before {
+  content: '';
+  position: absolute;
+  inset: 1.5px;
+  border-radius: 50%;
+  background: var(--status-bg);
+}
+
+.skill-status svg {
+  width: 34px;
+  height: 34px;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.skill-status.status-synced {
+  --status-bg: #d4f2df;
+  color: #168a4a;
+}
+
+.skill-status.status-changed {
+  --status-bg: #ffe8b5;
+  color: #c27713;
+}
+
+.skill-status.status-outdated {
+  --status-bg: #e2dbff;
+  color: #6d5bd0;
+}
+
+.skill-status.status-conflict,
+.skill-status.status-missing {
+  --status-bg: #ffd8dc;
+  color: #d9363e;
+}
+
+.skill-status.status-untracked {
+  --status-bg: #dce2e8;
+  color: #727b86;
+}
+
+.skill-card-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.skill-title-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.skill-card-head h4 {
+  margin: 0;
+  min-width: 0;
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: #151717;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.skill-card-head h4.skill-name {
+  cursor: inherit;
+}
+
+.skill-state-tag {
+  color: #8b929b;
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.skill-state-tag.status-synced {
+  color: #168a4a;
+}
+
+.skill-state-tag.status-changed {
+  color: #b66a08;
+}
+
+.skill-state-tag.status-outdated {
+  color: #6652c7;
+}
+
+.skill-state-tag.status-conflict,
+.skill-state-tag.status-missing {
+  color: #d9363e;
+}
+
+.skill-state-tag.status-untracked {
+  color: #727b86;
+}
+
+.skill-card > p {
+  margin: 14px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: #6b7280;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.skill-card-actions {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 68px;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-radius: 0 0 15px 15px;
+  border-top: 0;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(102%);
+  transition: transform 0.2s ease, opacity 0.16s ease;
+}
+
+.skill-card-actions::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 24px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.52) 48%,
+    rgba(255, 255, 255, 0.86) 100%
+  );
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.skill-card:hover .skill-card-actions,
+.skill-card:focus-within .skill-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.skill-card-actions button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #dfe3e8;
+  border-radius: 7px;
+  background: #dfe3e8;
+  color: #151717;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transform: translateY(-3px);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.skill-card-actions button svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 12px;
+  stroke-linejoin: round;
+  transform: translateY(1px);
+}
+
+.skill-card-actions button:hover:not(:disabled) {
+  border-color: #d1d6dd;
+  background: #d1d6dd;
+}
+
+.skill-card-actions button.danger {
+  border-color: transparent;
+  background: transparent;
+  color: #dc2626;
+}
+
+.skill-card-actions button.danger:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+  color: #b91c1c;
+}
+
+.skill-card-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .deployment-line {
@@ -1154,6 +1752,63 @@ function goBack() {
 
 .section-header-log {
   margin-top: 40px;
+}
+
+@media (max-width: 900px) {
+  .project-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-sidebar {
+    grid-column: 1;
+    grid-row: 1;
+    position: static;
+    min-height: 0;
+    margin-top: 0;
+    margin-bottom: 28px;
+  }
+
+  .project-workspace {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .toolbar {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .project-nav {
+    position: relative;
+    top: auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .project-nav button {
+    padding: 12px 8px;
+    border-bottom: 0;
+    text-align: center;
+  }
+
+  .project-nav-slider {
+    display: none;
+  }
+
+  .project-nav button.active {
+    background: #151717;
+    box-shadow: none;
+  }
+
+  .project-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 12px;
+  }
+
+  .project-metric:nth-child(3)::after,
+  .project-metric:last-child::after {
+    display: none;
+  }
 }
 
 .message-log {

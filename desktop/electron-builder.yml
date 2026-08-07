@@ -4,6 +4,9 @@
 
 appId: com.vibebara.desktop
 productName: Vibebara
+# 旧版 NSIS 卸载器会按进程名做模糊匹配；安装器名若包含 Vibebara，
+# 升级时会把新安装器自身误判为仍在运行的应用。
+artifactName: "VBB-Setup-${version}.${ext}"
 directories:
   output: release
   buildResources: build

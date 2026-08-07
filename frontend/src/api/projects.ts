@@ -4,6 +4,7 @@ import { DEV_SKIP_AUTH } from '@/runtime/devAuth'
 import {
   devMockProjectList,
   devMockProjectDetail,
+  devMockProjectChanges,
   devMockUpdateProject,
 } from '@/runtime/devMock'
 import {
@@ -174,9 +175,11 @@ export interface SyncStatusResponse {
 export interface ChangeLogItem {
   id: string
   skill_id: string
+  deployment_id?: string | null
   user_id: string
   user_display_name: string
   skill_display_name: string
+  source?: string
   action: string
   version: number
   diff_summary: string
@@ -482,8 +485,8 @@ export async function getSyncChanges(
   projectId: string,
   sinceVersion: number = 0,
 ): Promise<SyncChangesResponse> {
-  // 开发者模式：无后端，返回空动态（成功），避免轮询 401 报错刷屏。
-  if (DEV_SKIP_AUTH) return { success: true, changes: [] }
+  // 开发者模式：回放完整动态，便于直接预览项目/Skill 筛选与聊天卡片布局。
+  if (DEV_SKIP_AUTH) return devMockProjectChanges(projectId)
   const { data } = await apiClient.get<SyncChangesResponse>(
     `/projects/${projectId}/sync/changes`,
     { params: { since_version: sinceVersion } },

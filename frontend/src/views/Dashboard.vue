@@ -2,9 +2,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSkillStore } from '@/stores/skillStore'
-import { useTeamStore } from '@/stores/teamStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import AppTopNav from '@/components/AppTopNav.vue'
+import AppEmptyState from '@/components/AppEmptyState.vue'
 import AddSkillModal from '@/components/AddSkillModal.vue'
 import type { NativeSkillItem } from '@/api/skillStore'
 import { getSkeletonCount, setSkeletonCount } from '@/utils/skeletonCount'
@@ -25,20 +25,11 @@ import teamEmptyImg from '@/img/status/team_empty.png'
 
 const router = useRouter()
 const store = useSkillStore()
-const teamStore = useTeamStore()
 const workspace = useWorkspaceStore()
 
 const addOpen = ref(false)
 
 const isTeamSpace = computed(() => workspace.spaceType === 'team')
-
-const currentTeamName = computed(
-  () => teamStore.teams.find((t) => t.id === workspace.activeTeamId)?.name ?? '',
-)
-
-const spaceTitle = computed(() =>
-  isTeamSpace.value ? currentTeamName.value || '团队空间' : '个人空间',
-)
 
 // 空状态插画：个人空间用 empty.png，团队空间用 team_empty.png
 const emptyImage = computed(() => (isTeamSpace.value ? teamEmptyImg : emptyImg))
@@ -183,24 +174,12 @@ onMounted(() => {
       </div>
 
       <!-- 空状态 -->
-      <div v-else-if="!store.loading" class="empty-state">
-        <div class="empty-illu">
-          <img :src="emptyImage" alt="" draggable="false" />
-        </div>
-        <template v-if="isTeamSpace && !teamStore.teams.length">
-          <h2>还没有加入任何团队</h2>
-          <p>创建或加入一个团队后，即可在团队空间共享 Skill</p>
-          <div class="empty-team-actions">
-            <button class="btn-primary" @click="teamStore.openCreateModal()">创建团队</button>
-            <button class="btn-ghost" @click="teamStore.openJoinModal()">加入团队</button>
-          </div>
-        </template>
-        <template v-else>
-          <h2>{{ spaceTitle }}还没有 Skill</h2>
-          <p>新建一个 Skill，或从本地文件夹 / 链接导入</p>
-          <button class="btn-primary" @click="addOpen = true"><span class="plus">+</span> 新增 Skill</button>
-        </template>
-      </div>
+      <AppEmptyState
+        v-else-if="!store.loading"
+        :image="emptyImage"
+        title="暂无 Skill"
+        description="点击右上角新增 Skill，开始创建或导入"
+      />
     </main>
 
     <AddSkillModal
@@ -588,45 +567,6 @@ onMounted(() => {
   100% {
     background-position: -200% 0;
   }
-}
-
-/* —— 空状态 —— */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 5rem 1rem;
-}
-
-.empty-illu {
-  /* 插画底部有大片透明留白，用负边距把下方文字拉近 */
-  margin-bottom: -3rem;
-}
-
-.empty-illu img {
-  width: 280px;
-  height: auto;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.empty-state h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: #151717;
-}
-
-.empty-state p {
-  margin: 0 0 1.5rem;
-  font-size: 0.88rem;
-  color: #9ca3af;
-}
-
-.empty-team-actions {
-  display: flex;
-  gap: 0.6rem;
 }
 
 @media (max-width: 768px) {
