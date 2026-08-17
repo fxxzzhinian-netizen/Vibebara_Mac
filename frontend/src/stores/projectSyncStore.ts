@@ -4,6 +4,8 @@ import {
   createProject,
   listProjects,
   getProject,
+  getProjectPermissions,
+  updateProjectPermissions as putProjectPermissions,
   updateProject,
   deleteProject,
   addSkillToProject,
@@ -28,6 +30,10 @@ import {
   type UserSkillDeploymentInfo,
   type MergedContent,
   type MergePreviewResponse,
+  type ProjectPermissionKey,
+  type ProjectPermissionMap,
+  type ProjectPermissionsResponse,
+  DEFAULT_PROJECT_MEMBER_PERMISSIONS,
 } from '@/api/projects'
 
 export const useProjectSyncStore = defineStore('project-sync', () => {
@@ -38,6 +44,11 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
   const currentProjectId = ref<string | null>(null)
   const currentProject = ref<ProjectInfo | null>(null)
   const projectSkills = ref<ProjectSkillInfo[]>([])
+
+  const projectPermissions = ref<ProjectPermissionsResponse | null>(null)
+  const permissionLoading = ref(false)
+  const permissionSaving = ref(false)
+  const permissionError = ref('')
 
   const syncStatus = ref<SyncStatusItem[]>([])
   const changeLog = ref<ChangeLogItem[]>([])
@@ -57,6 +68,7 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
   // 记录最近一次请求的团队：用于丢弃乱序返回（快速切换团队时，旧团队的慢响应
   // 不能覆盖新团队的项目列表，否则右侧项目区会“串味”/不跟随切换）。
   let lastProjectsTeamId: string | null = null
+  let lastPermissionProjectId: string | null = null
 
   async function fetchProjects(teamId: string) {
     loading.value = true
@@ -77,16 +89,122 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
     }
   }
 
+  function normalizePermissionMap(
+    permissions?: Partial<ProjectPermissionMap> | null,
+  ): ProjectPermissionMap {
+    return {
+      ...DEFAULT_PROJECT_MEMBER_PERMISSIONS,
+      ...(permissions ?? {}),
+    }
+  }
+
+  function normalizePermissionsResponse(
+    response: ProjectPermissionsResponse,
+  ): ProjectPermissionsResponse {
+    return {
+      ...response,
+      member_permissions: normalizePermissionMap(response.member_permissions),
+      effective_permissions: normalizePermissionMap(response.effective_permissions),
+      role: response.role || 'member',
+      can_manage: response.can_manage === true,
+      updated_by: response.updated_by ?? null,
+      updated_by_name: response.updated_by_name ?? null,
+      updated_at: response.updated_at ?? null,
+    }
+  }
+
+  function resetProjectPermissions() {
+    lastPermissionProjectId = null
+    projectPermissions.value = null
+    permissionLoading.value = false
+    permissionSaving.value = false
+    permissionError.value = ''
+  }
+
+  async function fetchProjectPermissions(projectId: string) {
+    lastPermissionProjectId = projectId
+    permissionLoading.value = true
+    permissionError.value = ''
+    try {
+      const res = await getProjectPermissions(projectId)
+      if (lastPermissionProjectId !== projectId) return res
+      if (res.success) {
+        projectPermissions.value = normalizePermissionsResponse(res)
+      } else {
+        permissionError.value = res.error || '获取项目权限失败'
+      }
+      return res
+    } catch (e: any) {
+      if (lastPermissionProjectId === projectId) {
+        permissionError.value =
+          e?.response?.data?.detail || e.message || '获取项目权限失败'
+      }
+      return {
+        success: false,
+        error: e?.response?.data?.detail || e.message || '获取项目权限失败',
+      }
+    } finally {
+      if (lastPermissionProjectId === projectId) {
+        permissionLoading.value = false
+      }
+    }
+  }
+
+  function canProjectOperation(key: ProjectPermissionKey): boolean {
+    if (permissionLoading.value) return false
+    return (
+      projectPermissions.value?.effective_permissions?.[key] ??
+      DEFAULT_PROJECT_MEMBER_PERMISSIONS[key]
+    )
+  }
+
+  async function updateProjectPermissions(
+    projectId: string,
+    memberPermissions: ProjectPermissionMap,
+  ) {
+    if (!projectPermissions.value?.can_manage) {
+      return { success: false, error: '仅项目所有者或管理员可以修改权限' }
+    }
+    permissionSaving.value = true
+    permissionError.value = ''
+    try {
+      const res = await putProjectPermissions(
+        projectId,
+        normalizePermissionMap(memberPermissions),
+      )
+      if (res.success && currentProjectId.value === projectId) {
+        projectPermissions.value = normalizePermissionsResponse(res)
+      } else if (!res.success) {
+        permissionError.value = res.error || '保存项目权限失败'
+      }
+      return res
+    } catch (e: any) {
+      const message =
+        e?.response?.data?.detail || e.message || '保存项目权限失败'
+      permissionError.value = message
+      return { success: false, error: message }
+    } finally {
+      permissionSaving.value = false
+    }
+  }
+
   async function selectProject(projectId: string) {
     currentProjectId.value = projectId
+    resetProjectPermissions()
+    const permissionRequest = fetchProjectPermissions(projectId)
     try {
       const res = await getProject(projectId)
+      if (currentProjectId.value !== projectId) return
       if (res.success) {
         currentProject.value = res.project ?? null
         projectSkills.value = res.skills
       }
     } catch (e: any) {
-      error.value = e.message
+      if (currentProjectId.value === projectId) {
+        error.value = e.message
+      }
+    } finally {
+      await permissionRequest
     }
   }
 
@@ -419,6 +537,7 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
     currentProjectId.value = null
     currentProject.value = null
     projectSkills.value = []
+    resetProjectPermissions()
     syncStatus.value = []
     changeLog.value = []
     pendingQueue.value = []
@@ -432,11 +551,19 @@ export const useProjectSyncStore = defineStore('project-sync', () => {
     currentProjectId,
     currentProject,
     projectSkills,
+    projectPermissions,
+    permissionLoading,
+    permissionSaving,
+    permissionError,
     syncStatus,
     changeLog,
     hasProjects,
     fetchProjects,
+    fetchProjectPermissions,
     selectProject,
+    canProjectOperation,
+    updateProjectPermissions,
+    resetProjectPermissions,
     create,
     update,
     remove,

@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, Date, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -19,6 +19,11 @@ class User(Base):
         String(256), unique=True, nullable=True
     )
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    birthday: Mapped[date | None] = mapped_column(Date, nullable=True)
+    locale: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(256), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(128), default="")
     # 注册时消费的邀请码（规范化形式），用于追溯；种子/历史用户为空
     invite_code_used: Mapped[str | None] = mapped_column(

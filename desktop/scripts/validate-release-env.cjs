@@ -2,12 +2,13 @@ const signingLink = process.env.WIN_CSC_LINK || process.env.CSC_LINK;
 const signingPassword =
   process.env.WIN_CSC_KEY_PASSWORD || process.env.CSC_KEY_PASSWORD;
 const updateUrl = process.env.VIBEBARA_UPDATE_URL || "";
+const allowUnsigned = process.argv.includes("--allow-unsigned");
 
 const errors = [];
-if (!signingLink) {
+if (!allowUnsigned && !signingLink) {
   errors.push("缺少 WIN_CSC_LINK（或 CSC_LINK）代码签名证书");
 }
-if (!signingPassword) {
+if (!allowUnsigned && !signingPassword) {
   errors.push(
     "缺少 WIN_CSC_KEY_PASSWORD（或 CSC_KEY_PASSWORD）证书密码",
   );
@@ -28,4 +29,8 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-console.log("[release] 签名凭据和 HTTPS 更新源检查通过");
+if (allowUnsigned) {
+  console.warn("[release] 警告：正在构建未签名自动更新包，仅校验 HTTPS 更新源");
+} else {
+  console.log("[release] 签名凭据和 HTTPS 更新源检查通过");
+}

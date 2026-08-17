@@ -60,6 +60,32 @@ async def _assert_skill_accessible(skill_id: str, user_id: str) -> None:
         raise PermissionError(f"Skill '{skill_id}' not found or access denied")
 
 
+async def _assert_skill_writable(skill_id: str, user_id: str) -> None:
+    """Team skills require owner/admin; personal skills require their owner."""
+    async with async_session_factory() as session:
+        team_row = await session.get(TeamSkill, skill_id)
+        personal_row = None if team_row else await session.get(PersonalSkill, skill_id)
+        role = (
+            await session.scalar(
+                select(TeamMember.role).where(
+                    TeamMember.team_id == team_row.team_id,
+                    TeamMember.user_id == user_id,
+                )
+            )
+            if team_row
+            else None
+        )
+
+    if team_row is not None:
+        if role not in ("owner", "admin"):
+            raise PermissionError("仅团队 owner/admin 可编辑该团队 Skill")
+    elif personal_row is not None:
+        if personal_row.owner_id and personal_row.owner_id != user_id:
+            raise PermissionError("无权操作他人的个人 Skill")
+    else:
+        raise FileNotFoundError(f"Skill '{skill_id}' not found")
+
+
 # LLM 测试（放在 /{skill_id} 之前避免路由冲突）
 @api_router.get("/llm/test")
 async def test_llm(user_id: str = Depends(get_current_user_id)):
@@ -148,13 +174,7 @@ async def write_resource_file(
 ):
     """保存单个资源文件内容到对象存储（COS）。"""
     try:
-        # 团队（平台）仓库 Skill：仅团队成员可编辑。
-        async with async_session_factory() as session:
-            team_row = await session.get(TeamSkill, skill_id)
-        if team_row is not None:
-            team_ids = await _user_team_ids(user_id)
-            if team_row.team_id not in team_ids:
-                return {"success": False, "error": "无权编辑该团队 Skill（非团队成员）"}
+        await _assert_skill_writable(skill_id, user_id)
 
         result = await NativeSkillStore.write_resource_file(
             skill_id, data.path, data.content,
@@ -194,16 +214,7 @@ async def update_skill(
     user_id: str = Depends(get_current_user_id),
 ):
     try:
-        # 团队（平台）仓库 Skill：任意团队成员均可编辑，非成员拒绝。
-        async with async_session_factory() as session:
-            team_row = await session.get(TeamSkill, skill_id)
-        if team_row is not None:
-            team_ids = await _user_team_ids(user_id)
-            if team_row.team_id not in team_ids:
-                return {
-                    "success": False,
-                    "error": "无权编辑该团队 Skill（非团队成员）",
-                }
+        await _assert_skill_writable(skill_id, user_id)
 
         result = await NativeSkillStore.update(
             skill_id, data.partial, vibeh_content=data.vibeh_content, user_id=user_id,
@@ -237,20 +248,11 @@ async def delete_skill(
     user_id: str = Depends(get_current_user_id),
 ):
     try:
-        # 团队（平台）仓库 Skill：任意团队成员均可删除，非成员拒绝。
-        async with async_session_factory() as session:
-            team_row = await session.get(TeamSkill, skill_id)
-        if team_row is not None:
-            team_ids = await _user_team_ids(user_id)
-            if team_row.team_id not in team_ids:
-                return {
-                    "success": False,
-                    "error": "无权删除该团队 Skill（非团队成员）",
-                }
+        await _assert_skill_writable(skill_id, user_id)
 
         await NativeSkillStore.delete(skill_id, user_id=user_id)
         return {"success": True}
-    except PermissionError as e:
+    except (FileNotFoundError, PermissionError) as e:
         return {"success": False, "error": str(e)}
     except Exception as e:
         logger.exception(f"[store/delete] {skill_id} 删除失败")
@@ -409,7 +411,7 @@ async def generate_skill_tags(
     供卡片上「重新生成标签」等手动触发使用；force=True 覆盖已有标签。
     """
     try:
-        await _assert_skill_accessible(skill_id, user_id)
+        await _assert_skill_writable(skill_id, user_id)
         tags = await NativeSkillStore.regenerate_tags(skill_id, force=True)
         return {"success": True, "tags": tags}
     except (FileNotFoundError, PermissionError) as e:
@@ -542,18 +544,8 @@ async def preview_skill(
 
 
 async def _assert_team_skill_editable(skill_id: str, user_id: str) -> None:
-    """版本回滚等写操作的鉴权：团队 Skill 需团队成员；个人 Skill 需本人。"""
-    async with async_session_factory() as session:
-        team_row = await session.get(TeamSkill, skill_id)
-        personal_row = None if team_row else await session.get(PersonalSkill, skill_id)
-    if team_row is not None:
-        if team_row.team_id not in await _user_team_ids(user_id):
-            raise PermissionError("无权操作该团队 Skill（非团队成员）")
-    elif personal_row is not None:
-        if personal_row.owner_id and personal_row.owner_id != user_id:
-            raise PermissionError("无权操作他人的个人 Skill")
-    else:
-        raise FileNotFoundError(f"Skill '{skill_id}' not found")
+    """Backward-compatible alias for version restore authorization."""
+    await _assert_skill_writable(skill_id, user_id)
 
 
 @api_router.get("/{skill_id}/versions", response_model=SkillVersionListResponse)

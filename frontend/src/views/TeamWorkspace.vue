@@ -132,6 +132,27 @@ function roleLabel(role: string): string {
   return ROLE_LABELS[role] || role
 }
 
+const memberGroups = computed(() => [
+  {
+    role: 'owner',
+    label: '所有者',
+    description: '拥有团队全部管理权限',
+    members: teamStore.members.filter((member) => member.role === 'owner'),
+  },
+  {
+    role: 'admin',
+    label: '管理员',
+    description: '可管理团队信息与项目内容',
+    members: teamStore.members.filter((member) => member.role === 'admin'),
+  },
+  {
+    role: 'member',
+    label: '成员',
+    description: '可参与团队项目与 Skill 协作',
+    members: teamStore.members.filter((member) => member.role === 'member'),
+  },
+].filter((group) => group.members.length))
+
 // —— 分配权限（仅 owner）——
 const showAssignRole = ref(false)
 const roleSaving = ref<string | null>(null) // 正在保存的成员 user_id
@@ -593,53 +614,111 @@ watch(
             </div>
           </div>
 
-          <!-- 团队信息（标题在卡片外） -->
-          <div class="manage-section-title">团队信息</div>
-          <div class="manage-card">
-            <div class="info-row">
-              <span class="info-label">团队描述</span>
-              <span v-if="!editingProfile" class="info-value">{{ teamStore.currentTeam.description || '暂无描述' }}</span>
-              <input
-                v-else
-                v-model="editDesc"
-                class="info-value info-value-edit"
-                maxlength="200"
-                placeholder="一句话介绍团队职责"
-                @keyup.enter="saveProfile"
-              />
-            </div>
-            <div class="info-row">
-              <span class="info-label">邀请码</span>
-              <code class="invite-code-chip">{{ teamStore.currentTeam.invite_code }}</code>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Skill 自动热更新</span>
-              <label class="setting-toggle">
-                <input
-                  type="checkbox"
-                  :checked="teamStore.currentTeam.auto_skill_hot_update"
-                  :disabled="settingsSaving"
-                  @change="toggleAutoHotUpdate"
-                />
-                <span>{{ teamStore.currentTeam.auto_skill_hot_update ? '已开启' : '已关闭' }}</span>
-              </label>
-            </div>
-          </div>
+          <div class="manage-stack">
+            <!-- 团队信息：沿用团队项目「基本信息」的标签 + 浅底字段结构 -->
+            <section class="manage-section" aria-labelledby="team-info-title">
+              <header class="manage-section-heading">
+                <div>
+                  <h2 id="team-info-title">团队信息</h2>
+                </div>
+              </header>
 
-          <!-- 团队成员（标题在卡片外，单独白底卡片） -->
-          <div class="manage-section-title">
-            团队成员
-            <span class="member-count">{{ teamStore.members.length }}</span>
-          </div>
-          <div class="manage-card">
-            <ul class="member-list">
-              <li v-for="m in teamStore.members" :key="m.user_id">
-                <span class="member-avatar">{{ (m.display_name || m.username || '?').slice(0, 1).toUpperCase() }}</span>
-                <span class="member-name">{{ m.display_name || m.username }}</span>
-                <span class="member-role" :class="`role-${m.role}`">{{ roleLabel(m.role) }}</span>
-              </li>
-              <li v-if="!teamStore.members.length" class="member-empty">暂无成员</li>
-            </ul>
+              <div class="team-detail-form">
+                <div class="team-detail-field">
+                  <span class="team-detail-label">团队描述</span>
+                  <div v-if="!editingProfile" class="team-detail-surface team-description">
+                    {{ teamStore.currentTeam.description || '暂无描述' }}
+                  </div>
+                  <input
+                    v-else
+                    v-model="editDesc"
+                    class="team-detail-surface team-detail-edit"
+                    maxlength="200"
+                    placeholder="一句话介绍团队职责"
+                    @keyup.enter="saveProfile"
+                  />
+                </div>
+
+                <div class="team-detail-grid">
+                  <div class="team-detail-field">
+                    <span class="team-detail-label">邀请码</span>
+                    <div class="team-detail-surface">
+                      <code class="invite-code">{{ teamStore.currentTeam.invite_code }}</code>
+                    </div>
+                  </div>
+                  <div class="team-detail-field">
+                    <span class="team-detail-label">Skill 自动热更新</span>
+                    <div class="team-detail-surface setting-surface">
+                      <label class="setting-toggle">
+                        <input
+                          type="checkbox"
+                          :checked="teamStore.currentTeam.auto_skill_hot_update"
+                          :disabled="settingsSaving"
+                          @change="toggleAutoHotUpdate"
+                        />
+                        <span class="toggle-track" aria-hidden="true">
+                          <span class="toggle-thumb"></span>
+                        </span>
+                        <span class="toggle-copy">
+                          {{ teamStore.currentTeam.auto_skill_hot_update ? '已开启' : '已关闭' }}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 团队成员：按权限层级分组，并以团队项目同风格卡片展示 -->
+            <section class="manage-section" aria-labelledby="team-members-title">
+              <header class="manage-section-heading">
+                <div>
+                  <h2 id="team-members-title">
+                    团队成员
+                    <span class="member-count">{{ teamStore.members.length }}</span>
+                  </h2>
+                </div>
+              </header>
+
+              <div v-if="memberGroups.length" class="member-groups">
+                <section
+                  v-for="group in memberGroups"
+                  :key="group.role"
+                  class="member-group"
+                  :class="`member-group-${group.role}`"
+                >
+                  <div class="member-group-heading">
+                    <div>
+                      <h3>{{ group.label }}</h3>
+                    </div>
+                    <span>{{ group.members.length }} 人</span>
+                  </div>
+                  <div class="member-card-grid">
+                    <article
+                      v-for="m in group.members"
+                      :key="m.user_id"
+                      class="member-card"
+                      :class="`member-card-${m.role}`"
+                    >
+                      <div class="member-card-head">
+                        <span class="member-avatar">
+                          {{ (m.display_name || m.username || '?').slice(0, 1).toUpperCase() }}
+                        </span>
+                        <div class="member-identity">
+                          <strong>{{ m.display_name || m.username }}</strong>
+                          <span v-if="m.display_name && m.username">@{{ m.username }}</span>
+                        </div>
+                        <span class="member-role" :class="`role-${m.role}`">
+                          {{ roleLabel(m.role) }}
+                        </span>
+                      </div>
+                      <p class="member-permission-copy">{{ group.description }}</p>
+                    </article>
+                  </div>
+                </section>
+              </div>
+              <div v-else class="member-empty">暂无成员</div>
+            </section>
           </div>
         </section>
         </transition>
@@ -844,19 +923,6 @@ watch(
 }
 .repo-title-edit:focus { border-bottom-color: #151717; }
 
-.info-value-edit {
-  flex: 1;
-  border: none;
-  border-bottom: 2px solid #d1d5db;
-  border-radius: 0;
-  background: transparent;
-  padding: 2px 2px 4px;
-  outline: none;
-  box-sizing: border-box;
-  font-family: inherit;
-}
-.info-value-edit:focus { border-bottom-color: #151717; }
-
 /* 团队管理 */
 .btn-add-danger {
   background: #dc2626;
@@ -885,72 +951,119 @@ watch(
   margin-bottom: 16px;
 }
 
-/* 团队管理卡片（白底） */
-.manage-card {
-  background: #ffffff;
-  border: 1px solid #ebedf0;
-  border-radius: 16px;
-  padding: 20px 24px;
-  margin-bottom: 20px;
+/* 团队管理：信息与成员上下排列，信息结构对齐团队项目「基本信息」 */
+.manage-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
 }
-.manage-section-title {
+
+.manage-section {
+  min-width: 0;
+}
+
+.manage-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.manage-section-heading h2 {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
+  color: #151717;
   font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  color: #151717;
-  margin: 4px 0 12px;
+  line-height: 1.4;
 }
+
 .member-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   min-width: 22px;
   height: 20px;
   padding: 0 7px;
   border-radius: 999px;
-  background: #f1f2f4;
-  color: #6b7280;
-  font-size: 0.74rem;
+  background: #eef0f3;
+  color: #606873;
+  font-size: 0.72rem;
   font-weight: 600;
 }
 
-.info-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 0;
-  border-top: 1px solid #f2f3f5;
+.team-detail-form {
+  width: 100%;
 }
-.info-row:first-of-type {
-  border-top: none;
-  padding-top: 0;
+
+.team-detail-field + .team-detail-field {
+  margin-top: 14px;
 }
-.info-row:last-of-type {
-  padding-bottom: 0;
-}
-.info-label {
-  flex-shrink: 0;
-  width: 132px;
-  font-size: 0.84rem;
-  color: #9ca3af;
+
+.team-detail-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #606873;
+  font-size: 0.78rem;
   font-weight: 500;
 }
-.info-value {
-  flex: 1;
-  font-size: 0.88rem;
-  color: #374151;
+
+.team-detail-surface {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: #eef0f3;
+  color: #4b5563;
+  font-family: inherit;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  box-sizing: border-box;
   word-break: break-word;
 }
-.invite-code-chip {
-  background: #eef2ff;
-  padding: 3px 10px;
-  border-radius: 6px;
-  color: #4f46e5;
+
+.team-description {
+  min-height: 88px;
+  align-items: flex-start;
+}
+
+.team-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.team-detail-grid .team-detail-field {
+  margin-top: 0;
+}
+
+.team-detail-edit {
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.team-detail-edit:focus {
+  border-color: #151717;
+  background: #ffffff;
+}
+
+.invite-code {
+  color: #4b5563;
   font-size: 0.82rem;
   font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.02em;
+}
+
+.setting-surface {
+  justify-content: space-between;
 }
 
 .setting-toggle {
@@ -958,12 +1071,177 @@ watch(
   align-items: center;
   gap: 8px;
   font-size: 0.88rem;
-  color: #374151;
+  color: #30343b;
   cursor: pointer;
 }
 
 .setting-toggle input {
-  accent-color: #151717;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: #c9cdd3;
+  transition: background 0.18s ease;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(21, 23, 23, 0.22);
+  transition: transform 0.18s ease;
+}
+
+.setting-toggle input:checked + .toggle-track {
+  background: #151717;
+}
+
+.setting-toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(16px);
+}
+
+.setting-toggle input:focus-visible + .toggle-track {
+  outline: 2px solid rgba(21, 23, 23, 0.22);
+  outline-offset: 2px;
+}
+
+.setting-toggle input:disabled + .toggle-track,
+.setting-toggle input:disabled ~ .toggle-copy {
+  opacity: 0.55;
+}
+
+.setting-toggle:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+.member-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.member-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.member-group-heading h3 {
+  margin: 0;
+  color: #30343b;
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.member-group-heading > span {
+  flex-shrink: 0;
+  color: #8b929b;
+  font-size: 0.74rem;
+}
+
+.member-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.member-card {
+  position: relative;
+  min-width: 0;
+  min-height: 118px;
+  padding: 18px 20px;
+  overflow: hidden;
+  border: 2px solid #d7dae0;
+  border-radius: 16px;
+  background: #ffffff;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.member-card:hover {
+  border-color: #aeb4bd;
+  box-shadow: 0 8px 24px rgba(21, 23, 23, 0.07);
+}
+
+.member-card-owner {
+  border-color: #ead7a8;
+}
+
+.member-card-owner:hover {
+  border-color: #d6a84c;
+}
+
+.member-card-admin {
+  border-color: #d9d7f5;
+}
+
+.member-card-admin:hover {
+  border-color: #8b83df;
+}
+
+.member-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.member-identity {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.member-identity strong {
+  overflow: hidden;
+  color: #151717;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-identity span {
+  overflow: hidden;
+  color: #9aa0a8;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-permission-copy {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid #eef0f2;
+  color: #8b929b;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .team-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .member-card-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .section-title {
@@ -1407,29 +1685,6 @@ watch(
   white-space: nowrap;
 }
 
-.member-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.member-list li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid #f2f3f5;
-  font-size: 0.88rem;
-  color: #151717;
-}
-.member-list li:first-child {
-  border-top: none;
-  padding-top: 0;
-}
-.member-list li:last-child {
-  padding-bottom: 0;
-}
-
 .member-avatar {
   display: inline-flex;
   align-items: center;
@@ -1442,11 +1697,6 @@ watch(
   font-size: 0.8rem;
   font-weight: 600;
   flex-shrink: 0;
-}
-
-.member-name {
-  flex: 1;
-  font-weight: 500;
 }
 
 .member-role {

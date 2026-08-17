@@ -10,7 +10,9 @@
 #   .\build-desktop.ps1 -Dev         # Backend + Vite dev server + desktop
 #   .\build-desktop.ps1 -Pack        # Build electron-builder unpacked directory
 #   .\build-desktop.ps1 -UnsignedDist # Build unsigned NSIS installer for testing
+#   .\build-desktop.ps1 -UnsignedDist -Publish # Build and publish unsigned auto-update
 #   .\build-desktop.ps1 -Dist        # Build signed release NSIS installer
+#   .\build-desktop.ps1 -Dist -Publish # Build, sign, and publish update files to COS
 #
 # If script execution is restricted:
 #   powershell -ExecutionPolicy Bypass -File .\build-desktop.ps1
@@ -24,6 +26,7 @@ param(
     [switch]$Pack,          # electron-builder --win --dir
     [switch]$UnsignedDist,  # Unsigned NSIS installer for internal testing
     [switch]$Dist,          # Signed release NSIS installer
+    [switch]$Publish,       # With -Dist/-UnsignedDist, upload updater artifacts to Tencent COS
     [switch]$ForceInstall   # Force npm/pip dependency installation
 )
 
@@ -37,6 +40,9 @@ foreach ($enabled in @($Pack, $UnsignedDist, $Dist)) {
 }
 if ($packageModeCount -gt 1) {
     throw "Choose only one packaging mode: -Pack, -UnsignedDist, or -Dist."
+}
+if ($Publish -and -not ($Dist -or $UnsignedDist)) {
+    throw "-Publish must be used together with -Dist or -UnsignedDist."
 }
 
 $ROOT = $PSScriptRoot
@@ -268,17 +274,34 @@ if ($Dist) {
     Invoke-In $desktopDir { npm run dist:win } "electron-builder dist"
     Invoke-In $desktopDir { npm run smoke:cli -- --require-signature } "desktop CLI signed smoke"
     Publish-CliArtifact (Join-Path $desktopDir "release\win-unpacked\resources\cli\vibebara.exe")
+    if ($Publish) {
+        Write-Section "Publish desktop update to Tencent COS"
+        & (Join-Path $desktopDir "scripts\publish-update-cos.ps1")
+        if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+            throw "COS update publish failed (exit $LASTEXITCODE)"
+        }
+    }
     Write-Host "  [OK] Output: $(Join-Path $desktopDir 'release')" -ForegroundColor Green
     Write-Host ""; exit 0
 }
 if ($UnsignedDist) {
-    Write-Section "Package unsigned NSIS installer for internal testing"
+    if ($Publish) {
+        Write-Section "Package unsigned NSIS installer with auto-update metadata"
+    }
+    else {
+        Write-Section "Package unsigned NSIS installer for internal testing"
+    }
     Set-DesktopBuildVersion | Out-Null
     Write-Host "  Electron and NSIS binaries may be downloaded on the first run" -ForegroundColor Gray
     $previousAutoDiscovery = $env:CSC_IDENTITY_AUTO_DISCOVERY
     try {
         $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
-        Invoke-In $desktopDir { npm run dist:win:unsigned } "electron-builder unsigned dist"
+        if ($Publish) {
+            Invoke-In $desktopDir { npm run dist:win:update-unsigned } "electron-builder unsigned update dist"
+        }
+        else {
+            Invoke-In $desktopDir { npm run dist:win:unsigned } "electron-builder unsigned dist"
+        }
     }
     finally {
         if ($null -eq $previousAutoDiscovery) {
@@ -290,6 +313,13 @@ if ($UnsignedDist) {
     }
     Invoke-In $desktopDir { npm run smoke:cli } "desktop CLI smoke"
     Publish-CliArtifact (Join-Path $desktopDir "release\win-unpacked\resources\cli\vibebara.exe")
+    if ($Publish) {
+        Write-Section "Publish unsigned desktop update to Tencent COS"
+        & (Join-Path $desktopDir "scripts\publish-update-cos.ps1") -AllowUnsigned
+        if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+            throw "COS update publish failed (exit $LASTEXITCODE)"
+        }
+    }
     Write-Host "  [OK] Unsigned output: $(Join-Path $desktopDir 'release')" -ForegroundColor Green
     Write-Host ""; exit 0
 }

@@ -24,6 +24,11 @@ const router = createRouter({
       component: () => import('@/views/Dashboard.vue'),
     },
     {
+      path: '/profile',
+      name: 'profile',
+      redirect: '/',
+    },
+    {
       // 团队工作台：与全局 AppTopNav 共用外壳，标签页由路由驱动。
       path: '/team/skills',
       name: 'team-skills',

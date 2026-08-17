@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services import project_service, team_service
+from app.services import project_permission_service, project_service, team_service
 from app.services import auth_service
 from app.services.content_transfer import (
     collect_store_resources,
@@ -348,6 +348,25 @@ def _install_router_stubs():
     async def fake_is_member(team_id, user_id):
         return user_id == "u-member"
 
+    async def fake_require_project_permission(project_id, user_id, permission):
+        if user_id != "u-member":
+            raise project_permission_service.ProjectAccessDeniedError(
+                "无权访问该项目"
+            )
+        return project_permission_service.ProjectPermissionContext(
+            project_id=project_id,
+            team_id="team-1",
+            user_id=user_id,
+            role="member",
+            member_permissions=(
+                project_permission_service.DEFAULT_MEMBER_PERMISSIONS.copy()
+            ),
+            effective_permissions=(
+                project_permission_service.DEFAULT_MEMBER_PERMISSIONS.copy()
+            ),
+            can_manage=False,
+        )
+
     async def fake_build(project_id, skill_id, user_id, tool):
         return {
             "success": True,
@@ -382,6 +401,9 @@ def _install_router_stubs():
         "verify": auth_service.verify_credential,
         "team_id": project_service.get_project_team_id,
         "is_member": team_service.is_team_member,
+        "require_project_permission": (
+            project_permission_service.require_project_permission
+        ),
         "build": project_service.build_project_skill_artifact,
         "register": project_service.register_deployment,
         "list_user_deployments": project_service.list_user_deployments,
@@ -389,6 +411,9 @@ def _install_router_stubs():
     auth_service.verify_credential = fake_verify
     project_service.get_project_team_id = fake_get_team_id
     team_service.is_team_member = fake_is_member
+    project_permission_service.require_project_permission = (
+        fake_require_project_permission
+    )
     project_service.build_project_skill_artifact = fake_build
     project_service.register_deployment = lambda **kw: fake_register(**kw)
     project_service.list_user_deployments = fake_list_user_deployments
@@ -399,6 +424,9 @@ def _restore_router_stubs(saved):
     auth_service.verify_credential = saved["verify"]
     project_service.get_project_team_id = saved["team_id"]
     team_service.is_team_member = saved["is_member"]
+    project_permission_service.require_project_permission = saved[
+        "require_project_permission"
+    ]
     project_service.build_project_skill_artifact = saved["build"]
     project_service.register_deployment = saved["register"]
     project_service.list_user_deployments = saved["list_user_deployments"]

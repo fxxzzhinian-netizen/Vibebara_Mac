@@ -819,7 +819,7 @@ async function confirmAddFromIde() {
 .method-tab {
   flex: 1;
   padding: 8px 4px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid transparent;
   border-radius: 8px;
   background: #ffffff;
   color: #6b7280;
@@ -831,7 +831,6 @@ async function confirmAddFromIde() {
 }
 
 .method-tab:hover:not(.disabled):not(.active) {
-  border-color: #d1d5db;
   color: #151717;
 }
 

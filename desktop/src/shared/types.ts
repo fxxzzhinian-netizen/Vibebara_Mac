@@ -57,6 +57,27 @@ export interface CliAuthorizationResult {
   cliPath?: string;
 }
 
+export type DesktopUpdateStatus =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "error";
+
+/** 主进程维护并推送给渲染层的桌面更新状态快照。 */
+export interface DesktopUpdateState {
+  status: DesktopUpdateStatus;
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+  message?: string;
+}
+
 /** IPC 通道名（main ↔ preload）。 */
 export const IPC = {
   /** 同步取运行时配置（preload sendSync，窗口加载前已就绪）。 */
@@ -77,6 +98,14 @@ export const IPC = {
   LOCAL_AGENT_CHANGED: "vibebara:local-agent-changed",
   /** 将已认证会话铸造的 PAT 写入 CLI 配置文件。 */
   CLI_AUTHORIZE: "vibebara:cli-authorize",
+  /** 获取当前桌面更新状态快照。 */
+  UPDATE_GET_STATE: "vibebara:update-get-state",
+  /** 立即检查更新（后台自动检查之外的手动入口）。 */
+  UPDATE_CHECK: "vibebara:update-check",
+  /** 退出应用并安装已经下载完成的更新。 */
+  UPDATE_INSTALL: "vibebara:update-install",
+  /** 主进程 → 渲染层推送：更新状态或下载进度变化。 */
+  UPDATE_STATE_CHANGED: "vibebara:update-state-changed",
 } as const;
 
 export type LauncherToolId =

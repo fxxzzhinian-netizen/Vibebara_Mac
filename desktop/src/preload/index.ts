@@ -23,6 +23,10 @@ const CH = {
   DEVICE_PERSIST_ID: "vibebara:device-persist-id",
   LOCAL_AGENT_CHANGED: "vibebara:local-agent-changed",
   CLI_AUTHORIZE: "vibebara:cli-authorize",
+  UPDATE_GET_STATE: "vibebara:update-get-state",
+  UPDATE_CHECK: "vibebara:update-check",
+  UPDATE_INSTALL: "vibebara:update-install",
+  UPDATE_STATE_CHANGED: "vibebara:update-state-changed",
 } as const;
 
 interface RuntimeConfigPayload {
@@ -53,6 +57,24 @@ interface CliAuthorizationResult {
   cliBundled: boolean;
   terminalRestartRequired: boolean;
   cliPath?: string;
+}
+
+interface DesktopUpdateState {
+  status:
+    | "disabled"
+    | "idle"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "downloaded"
+    | "error";
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+  message?: string;
 }
 
 const runtime =
@@ -111,5 +133,21 @@ contextBridge.exposeInMainWorld("__VIBEBARA_DESKTOP__", {
   launcher: {
     listTools: () => ipcRenderer.invoke(CH.LAUNCHER_LIST),
     launchTool: (req: unknown) => ipcRenderer.invoke(CH.LAUNCHER_LAUNCH, req),
+  },
+  update: {
+    getState: (): Promise<DesktopUpdateState> =>
+      ipcRenderer.invoke(CH.UPDATE_GET_STATE) as Promise<DesktopUpdateState>,
+    check: (): Promise<DesktopUpdateState> =>
+      ipcRenderer.invoke(CH.UPDATE_CHECK) as Promise<DesktopUpdateState>,
+    install: (): Promise<boolean> =>
+      ipcRenderer.invoke(CH.UPDATE_INSTALL) as Promise<boolean>,
+    onStateChange: (
+      cb: (payload: DesktopUpdateState) => void,
+    ): (() => void) => {
+      const listener = (_e: unknown, payload: DesktopUpdateState): void =>
+        cb(payload);
+      ipcRenderer.on(CH.UPDATE_STATE_CHANGED, listener);
+      return () => ipcRenderer.removeListener(CH.UPDATE_STATE_CHANGED, listener);
+    },
   },
 });

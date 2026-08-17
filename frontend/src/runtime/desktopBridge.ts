@@ -62,6 +62,26 @@ export interface CliAuthorizationResult {
   cliPath?: string
 }
 
+export type DesktopUpdateStatus =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export interface DesktopUpdateState {
+  status: DesktopUpdateStatus
+  currentVersion: string
+  availableVersion?: string
+  percent?: number
+  transferred?: number
+  total?: number
+  bytesPerSecond?: number
+  message?: string
+}
+
 export interface VibebaraDesktopBridge {
   mode: 'desktop'
   /** 有效设备标识（M5-b）：registeredDeviceId ?? clientUuid。 */
@@ -93,6 +113,16 @@ export interface VibebaraDesktopBridge {
   launcher: {
     listTools(): Promise<{ tools: DesktopToolInfo[] }>
     launchTool(req: DesktopLaunchRequest): Promise<DesktopLaunchResponse>
+  }
+  update: {
+    /** 获取主进程维护的更新状态快照，避免订阅前发生的事件丢失。 */
+    getState(): Promise<DesktopUpdateState>
+    /** 立即触发一次更新检查。 */
+    check(): Promise<DesktopUpdateState>
+    /** 退出应用并安装已下载完成的版本。 */
+    install(): Promise<boolean>
+    /** 订阅检查、下载进度和下载完成状态。 */
+    onStateChange(cb: (payload: DesktopUpdateState) => void): () => void
   }
 }
 

@@ -18,6 +18,7 @@ desktop/
 │   └── installer.nsh       # 安装/升级/卸载时维护用户级 CLI PATH
 ├── scripts/
 │   ├── smoke-agent.cjs      # 无 GUI 验证本地代理拉起/令牌/重启/清理
+│   ├── publish-update-cos.ps1 # 按安全顺序上传签名安装包和更新元数据
 │   └── update-cli-path.ps1  # 幂等添加/删除 resources/cli PATH
 └── src/
     ├── shared/types.ts      # 主进程↔预加载 共享类型 + IPC 通道常量
@@ -78,7 +79,47 @@ npm run smoke:agent   # 验证本地代理拉起/配对令牌/崩溃重启/退�
 升级保持该 PATH，真实卸载时删除。Windows 只会向新启动的终端传播 PATH，
 因此安装或升级后需重新打开终端。
 
-`-UnsignedDist` 使用基础配置生成未签名 NSIS 内测安装包；`-Dist` 使用
-`electron-builder.release.yml`，要求代码签名证书和 HTTPS 更新源；
-安装包、桌面主程序及内置 `vibebara.exe` 都必须签名。CLI 授权配置
+`-UnsignedDist` 默认使用基础配置生成未签名 NSIS 内测安装包；加上 `-Publish` 后改用
+`electron-builder.unsigned-release.yml` 生成自动更新元数据并发布。`-Dist` 使用
+`electron-builder.release.yml`，要求代码签名证书和 HTTPS 更新源。CLI 授权配置
 `%USERPROFILE%\.vibebara\config.json` 属于用户数据，卸载时保留。
+
+## 自动更新与 COS 源站发布
+
+带更新元数据的安装包使用 `electron-updater`：启动 8 秒后后台检查并自动下载；下载完成后在应用内提示
+“立即重启安装 / 稍后”。选择稍后不会打断当前工作，正常退出应用时也会自动安装已下载版本。
+开发态和未配置 `publish` 的安装包不会形成可用的在线更新链路。未签名自动更新属于过渡方案：
+Windows 无法验证发布者，首次安装和后续升级都可能触发 SmartScreen；取得证书后应切回 `-Dist`。
+
+目前直接使用腾讯云 COS 源站 HTTPS 地址，不依赖 CDN。建议为桌面更新创建独立桶；至少应确保
+`desktop/windows/` 下的安装包、blockmap 和 `latest.yml` 可匿名读取，不要修改 Skill 私有对象
+的权限。发布机需安装 `coscli` 并设置：
+
+```powershell
+$env:COS_BUCKET = "vibebara-exe-1327732770"
+$env:COS_REGION = "ap-chengdu"
+$env:COS_SECRET_ID = "发布专用SecretId"
+$env:COS_SECRET_KEY = "发布专用SecretKey"
+$env:VIBEBARA_COS_UPDATE_PREFIX = "desktop/windows"
+$env:VIBEBARA_UPDATE_URL = "https://vibebara-exe-1327732770.cos.ap-chengdu.myqcloud.com/desktop/windows/"
+
+# 过渡期：构建并发布未签名自动更新
+.\build-desktop.ps1 -UnsignedDist -Publish
+
+# 取得证书后：改用签名发布
+# $env:WIN_CSC_LINK = "C:\secure\vibebara-signing.pfx"
+# $env:WIN_CSC_KEY_PASSWORD = "证书密码"
+# .\build-desktop.ps1 -Dist -Publish
+```
+
+凭据只从发布机环境变量读取，不写入仓库。脚本会校验安装包签名状态；未签名发布必须由
+`-UnsignedDist -Publish` 显式开启。随后先上传带版本号的
+`VBB-Setup-*.exe` 和 `.blockmap`，最后上传 `latest.yml`，随后用 HTTPS HEAD 请求确认三个对象
+均可匿名读取。只验证发布文件而不上传时可运行：
+
+```powershell
+.\desktop\scripts\publish-update-cos.ps1 -AllowUnsigned -DryRun
+```
+
+后续接入 CDN 时，只需将 `VIBEBARA_UPDATE_URL` 改为对应 CDN HTTPS 目录后重新发布新版本，
+客户端更新逻辑无需调整。已安装的旧版本仍会继续访问其安装包内记录的原 COS 地址。

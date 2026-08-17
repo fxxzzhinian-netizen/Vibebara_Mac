@@ -102,10 +102,14 @@ async def _service_roundtrip() -> None:
         assert sess.startswith("vhs_")
         assert await auth_service.verify_credential(sess) == uid
 
+        # 尚未签发 PAT 时，CLI 状态为未生成
+        assert await auth_service.has_active_api_key(uid) is False
+
         # PAT 签发（无过期）→ 校验命中
         pat1 = await auth_service.create_pat(uid, name="cli")
         assert pat1.startswith("vhk_")
         assert await auth_service.verify_credential(pat1) == uid
+        assert await auth_service.has_active_api_key(uid) is True
 
         # 未知 / 空 → None
         assert await auth_service.verify_credential("vhk_does-not-exist") is None

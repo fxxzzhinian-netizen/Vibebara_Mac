@@ -17,6 +17,8 @@ from app.schemas.project import (
     ProjectCreateRequest,
     ProjectDetailResponse,
     ProjectListResponse,
+    ProjectPermissionResponse,
+    ProjectPermissionUpdateRequest,
     ProjectResponse,
     ProjectUpdateRequest,
     PullUpdateRequest,
@@ -34,7 +36,7 @@ from app.schemas.project import (
     SyncStatusResponse,
     UserSkillDeploymentListResponse,
 )
-from app.services import project_service, team_service
+from app.services import project_permission_service, project_service, team_service
 from app.services.native_skill_store import NativeSkillStore
 from app.services.skill_forge_service import scan_external_packages
 
@@ -45,12 +47,50 @@ api_router = APIRouter(tags=["projects"])
 
 async def _check_project_access(project_id: str, user_id: str):
     """校验用户是否有权访问该项目（通过 team 成员关系）"""
-    team_id = await project_service.get_project_team_id(project_id)
-    if not team_id:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    if not await team_service.is_team_member(team_id, user_id):
-        raise HTTPException(status_code=403, detail="无权访问该项目")
-    return team_id
+    try:
+        context = await project_permission_service.require_project_access(
+            project_id, user_id
+        )
+        return context.team_id
+    except project_permission_service.ProjectPermissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def _check_project_manager(project_id: str, user_id: str):
+    try:
+        return await project_permission_service.require_project_manager(
+            project_id, user_id
+        )
+    except project_permission_service.ProjectPermissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def _check_project_permission(
+    project_id: str,
+    user_id: str,
+    permission: str,
+):
+    try:
+        return await project_permission_service.require_project_permission(
+            project_id, user_id, permission
+        )
+    except project_permission_service.ProjectPermissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def _check_deployment_access(
+    deployment_id: str,
+    user_id: str,
+    permission: Optional[str] = None,
+):
+    try:
+        return await project_permission_service.require_deployment_access(
+            deployment_id,
+            user_id,
+            permission,
+        )
+    except project_permission_service.ProjectPermissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 # ------------------------------------------------------------------
@@ -95,13 +135,50 @@ async def get_project(
     return {"success": True, "project": project, "skills": skills}
 
 
+@api_router.get(
+    "/projects/{project_id}/permissions",
+    response_model=ProjectPermissionResponse,
+)
+async def get_project_permissions(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        permissions = await project_permission_service.get_project_permissions(
+            project_id, user_id
+        )
+        return {"success": True, **permissions}
+    except project_permission_service.ProjectPermissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@api_router.put(
+    "/projects/{project_id}/permissions",
+    response_model=ProjectPermissionResponse,
+)
+async def update_project_permissions(
+    project_id: str,
+    data: ProjectPermissionUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        permissions = await project_permission_service.update_project_permissions(
+            project_id,
+            user_id,
+            data.member_permissions.model_dump(),
+        )
+        return {"success": True, **permissions}
+    except project_permission_service.ProjectPermissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @api_router.put("/projects/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project_id: str,
     data: ProjectUpdateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    await _check_project_access(project_id, user_id)
+    await _check_project_manager(project_id, user_id)
     project = await project_service.update_project(
         project_id, data.name, data.description, user_id
     )
@@ -114,10 +191,7 @@ async def update_project(
 async def delete_project(
     project_id: str, user_id: str = Depends(get_current_user_id)
 ):
-    team_id = await _check_project_access(project_id, user_id)
-    role = await team_service.get_member_role(team_id, user_id)
-    if role not in ("owner", "admin"):
-        raise HTTPException(status_code=403, detail="仅管理员可删除项目")
+    await _check_project_manager(project_id, user_id)
     success = await project_service.delete_project(project_id, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -134,7 +208,7 @@ async def add_skill(
     skill_id: str,
     user_id: str = Depends(get_current_user_id),
 ):
-    await _check_project_access(project_id, user_id)
+    await _check_project_permission(project_id, user_id, "add_skill")
     return await project_service.add_skill_to_project(project_id, skill_id, user_id)
 
 
@@ -154,7 +228,7 @@ async def remove_skill(
     skill_id: str,
     user_id: str = Depends(get_current_user_id),
 ):
-    await _check_project_access(project_id, user_id)
+    await _check_project_permission(project_id, user_id, "remove_skill")
     return await project_service.remove_skill_from_project(project_id, skill_id, user_id)
 
 
@@ -243,7 +317,7 @@ async def deploy_project_skill(
     user_id: str = Depends(get_current_user_id),
 ):
     """[一次性端点 · 灰度保留] 后端直接构建+写后端盘+登记，供 local 形态使用。"""
-    await _check_project_access(project_id, user_id)
+    await _check_project_permission(project_id, user_id, "deploy_skill")
     return await project_service.deploy_project_skill(
         project_id=project_id,
         skill_id=skill_id,
@@ -272,7 +346,7 @@ async def build_project_skill_artifact(
 ):
     """① 云端构建产物（deploy 用）：返回 contents+resources+repoHash+abstractSnapshot，
     **不写后端盘、不登记**。前端拿到后交本地代理 write-skill 落盘、算 installedHash。"""
-    await _check_project_access(project_id, user_id)
+    await _check_project_permission(project_id, user_id, "deploy_skill")
     return await project_service.build_project_skill_artifact(
         project_id=project_id,
         skill_id=skill_id,
@@ -293,7 +367,7 @@ async def register_deployment(
 ):
     """④ 登记部署元数据（deploy 用）：本地代理落盘+算 installedHash 后调用，
     云端据上报 hash/snapshot UPSERT UserSkillDeployment + 写 change log，**不读后端盘**。"""
-    await _check_project_access(project_id, user_id)
+    await _check_project_permission(project_id, user_id, "deploy_skill")
     return await project_service.register_deployment(
         project_id=project_id,
         skill_id=skill_id,
@@ -327,6 +401,9 @@ async def stop_tracking_deployment(
     delete_files: bool = Query(False),
     user_id: str = Depends(get_current_user_id),
 ):
+    await _check_deployment_access(
+        deployment_id, user_id, "manage_tracking"
+    )
     return await project_service.stop_tracking_deployment(
         deployment_id,
         user_id,
@@ -345,6 +422,9 @@ async def resume_tracking_deployment(
     编排（桌面）形态：请求体携 `installedHash`（本地代理对 install_path 实算）；
     web 灰度形态：可无请求体，后端读 install_path 计算。本地缺失返回 status=missing。
     """
+    await _check_deployment_access(
+        deployment_id, user_id, "manage_tracking"
+    )
     return await project_service.resume_tracking_deployment(
         deployment_id,
         user_id,
@@ -360,6 +440,9 @@ async def promote_deployment(
     deployment_id: str,
     user_id: str = Depends(get_current_user_id),
 ):
+    await _check_deployment_access(
+        deployment_id, user_id, "push_changes"
+    )
     return await project_service.promote_deployment(deployment_id, user_id)
 
 
@@ -385,6 +468,9 @@ async def push_deployment(
     `create_version`/`version_number`/`version_label`（query，请求体形态亦可由 body 携带）：用户选择
     "更新版本序列号"时推送成功后落一条版本快照。query 优先于 body 以兼容两种形态。
     """
+    await _check_deployment_access(
+        deployment_id, user_id, "push_changes"
+    )
     if data is not None:
         return await project_service.push_deployment_content(
             deployment_id,
@@ -415,6 +501,7 @@ async def deployment_local_status(
     """[一次性端点 · 灰度保留] 云端读 install_path 算 hash 比对。
 
     编排形态下，本地 hash 由本地代理 /local/hash 上报，dirty 判定不再读后端盘。"""
+    await _check_deployment_access(deployment_id, user_id)
     return await project_service.get_deployment_local_status(deployment_id, user_id)
 
 
@@ -430,6 +517,9 @@ async def pull_update_deployment(
     """[一次性端点 · 灰度保留] 云端构建+写后端盘+登记，供 local 形态使用。
 
     编排形态改用 build-artifact（取产物）+ 本地代理 write-skill 覆盖落盘 + commit-pull。"""
+    await _check_deployment_access(
+        deployment_id, user_id, "pull_updates"
+    )
     return await project_service.pull_update_deployment(
         deployment_id, user_id, overwrite=data.overwrite
     )
@@ -447,6 +537,9 @@ async def build_deployment_artifact(
 ):
     """① 云端构建产物（pull 用）：返回团队仓库最新 contents+resources+repoHash+
     abstractSnapshot 供前端覆盖落盘，**不写后端盘**。归属由部署实例 user_id 校验。"""
+    await _check_deployment_access(
+        deployment_id, user_id, "pull_updates"
+    )
     return await project_service.build_deployment_artifact(deployment_id, user_id)
 
 
@@ -461,6 +554,9 @@ async def commit_pull(
 ):
     """拉取提交（pull 用）：覆盖落盘后登记同步状态、写 change log、广播 skill.pulled，
     **不读后端盘**（installedHash 由本地代理上报）。"""
+    await _check_deployment_access(
+        deployment_id, user_id, "pull_updates"
+    )
     return await project_service.commit_pull(
         deployment_id,
         user_id,
@@ -486,6 +582,9 @@ async def merge_preview(
 ):
     """AI 合并预览：上传本地 install 内容，云端取 base/theirs 做三方合并并返回可编辑
     合并稿（只算不写）。"""
+    await _check_deployment_access(
+        deployment_id, user_id, "merge_conflicts"
+    )
     return await project_service.merge_preview(
         deployment_id,
         user_id,
@@ -505,6 +604,9 @@ async def merge_apply(
 ):
     """AI 合并提交：乐观锁校验后把合并稿写回团队仓库（version+1），返回 native 构建
     产物供前端覆盖落盘。"""
+    await _check_deployment_access(
+        deployment_id, user_id, "merge_conflicts"
+    )
     return await project_service.merge_apply(
         deployment_id,
         user_id,
@@ -524,6 +626,9 @@ async def commit_merge(
     user_id: str = Depends(get_current_user_id),
 ):
     """AI 合并提交登记：覆盖落盘后置 synced、写动态(merged)、标记他人 outdated、广播。"""
+    await _check_deployment_access(
+        deployment_id, user_id, "merge_conflicts"
+    )
     return await project_service.commit_merge(
         deployment_id,
         user_id,
@@ -571,7 +676,7 @@ async def sync_pull(
     user_id: str = Depends(get_current_user_id),
 ):
     """批量从抽象层拉取指定 Skill 的最新内容"""
-    await _check_project_access(project_id, user_id)
+    await _check_project_permission(project_id, user_id, "pull_updates")
     items = []
     for sid in data.skill_ids:
         detail = await NativeSkillStore.get_by_id(sid)

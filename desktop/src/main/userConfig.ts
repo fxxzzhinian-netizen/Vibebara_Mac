@@ -19,7 +19,7 @@ export interface CloudConfig {
   cloudApiBase: string;
   /** 云端 WS 基址（不含路径）。 */
   cloudWsBase: string;
-  /** electron-updater generic provider 的 HTTPS 基址；空表示暂不检查更新。 */
+  /** electron-updater generic provider 的 HTTPS 覆盖地址；空则使用安装包内置 app-update.yml。 */
   updateUrl: string;
   /** 启动注入本地代理的可写根（可空）。 */
   writableRoots: string[];

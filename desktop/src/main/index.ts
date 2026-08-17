@@ -1,7 +1,13 @@
 import { app, BrowserWindow, dialog, Menu, protocol, session } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { configureAutoUpdater } from "./autoUpdate";
+import {
+  checkForDesktopUpdate,
+  configureAutoUpdater,
+  getUpdateState,
+  installDesktopUpdate,
+  onUpdateStateChange,
+} from "./autoUpdate";
 import {
   getEffectiveDeviceId,
   getOrCreateClientUuid,
@@ -190,6 +196,9 @@ async function bootstrap(): Promise<void> {
       if (runtimeConfig) runtimeConfig.deviceId = effective;
       return effective;
     },
+    getUpdateState,
+    checkForUpdate: checkForDesktopUpdate,
+    installUpdate: installDesktopUpdate,
   });
 
   console.log(
@@ -322,6 +331,11 @@ void app
     await configureProxy();
     configureSessionSecurity();
     createWindow();
+    onUpdateStateChange((state) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC.UPDATE_STATE_CHANGED, state);
+      }
+    });
     configureAutoUpdater(updateUrl);
 
     app.on("activate", () => {

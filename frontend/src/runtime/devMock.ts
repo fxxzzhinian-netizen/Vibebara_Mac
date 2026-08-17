@@ -28,6 +28,9 @@ import type {
   ProjectDetailResponse,
   ProjectResponse,
   ProjectSkillInfo,
+  ProjectPermissionKey,
+  ProjectPermissionMap,
+  ProjectPermissionsResponse,
   SyncChangesResponse,
   UserSkillDeploymentInfo,
 } from '@/api/projects'
@@ -405,7 +408,15 @@ const DEV_PROJECTS: Record<string, ProjectInfo[]> = {
       skill_count: 2,
     }),
   ],
-  'ai-lab': [],
+  'ai-lab': [
+    makeProject({
+      id: 'proj-agent-evals',
+      team_id: 'ai-lab',
+      name: 'Agent 评测',
+      description: '用于验证普通成员的项目权限只读状态。',
+      skill_count: 2,
+    }),
+  ],
 }
 
 export function devMockTeamList(): TeamListResponse {
@@ -621,6 +632,98 @@ export function devMockProjectDetail(projectId: string): ProjectDetailResponse {
     project: { ...project, skill_count: skills.length },
     skills,
   }
+}
+
+const DEV_PROJECT_PERMISSION_KEYS: ProjectPermissionKey[] = [
+  'add_skill',
+  'remove_skill',
+  'deploy_skill',
+  'push_changes',
+  'pull_updates',
+  'merge_conflicts',
+  'manage_tracking',
+]
+
+function defaultProjectPermissions(): ProjectPermissionMap {
+  return {
+    add_skill: true,
+    remove_skill: true,
+    deploy_skill: true,
+    push_changes: true,
+    pull_updates: true,
+    merge_conflicts: true,
+    manage_tracking: true,
+  }
+}
+
+const DEV_PROJECT_PERMISSIONS: Record<
+  string,
+  {
+    member_permissions: ProjectPermissionMap
+    updated_by: string | null
+    updated_by_name: string | null
+    updated_at: string | null
+  }
+> = {}
+
+function projectPermissionRole(projectId: string): string {
+  const project = findProjectAnyTeam(projectId)
+  if (!project) return 'member'
+  return DEV_MEMBERS[project.team_id]?.find((member) => member.user_id === 'dev-user')?.role ?? 'member'
+}
+
+export function devMockProjectPermissions(
+  projectId: string,
+): ProjectPermissionsResponse {
+  const role = projectPermissionRole(projectId)
+  const canManage = role === 'owner' || role === 'admin'
+  const stored = DEV_PROJECT_PERMISSIONS[projectId] ?? {
+    member_permissions: defaultProjectPermissions(),
+    updated_by: null,
+    updated_by_name: null,
+    updated_at: null,
+  }
+  DEV_PROJECT_PERMISSIONS[projectId] = stored
+
+  const effectivePermissions = canManage
+    ? defaultProjectPermissions()
+    : DEV_PROJECT_PERMISSION_KEYS.reduce((permissions, key) => {
+        permissions[key] = stored.member_permissions[key]
+        return permissions
+      }, defaultProjectPermissions())
+
+  return {
+    success: true,
+    member_permissions: { ...stored.member_permissions },
+    effective_permissions: effectivePermissions,
+    role,
+    can_manage: canManage,
+    updated_by: stored.updated_by,
+    updated_by_name: stored.updated_by_name,
+    updated_at: stored.updated_at,
+  }
+}
+
+export function devMockUpdateProjectPermissions(
+  projectId: string,
+  memberPermissions: ProjectPermissionMap,
+): ProjectPermissionsResponse {
+  const current = devMockProjectPermissions(projectId)
+  if (!current.can_manage) {
+    return {
+      ...current,
+      success: false,
+      error: '仅项目所有者或管理员可以修改权限',
+    }
+  }
+
+  DEV_PROJECT_PERMISSIONS[projectId] = {
+    member_permissions: { ...memberPermissions },
+    updated_by: 'dev-user',
+    updated_by_name: '我（开发者）',
+    updated_at: new Date().toISOString(),
+  }
+  return devMockProjectPermissions(projectId)
 }
 
 export function devMockProjectChanges(projectId: string): SyncChangesResponse {

@@ -6,6 +6,8 @@ import {
   devMockProjectDetail,
   devMockProjectChanges,
   devMockUpdateProject,
+  devMockProjectPermissions,
+  devMockUpdateProjectPermissions,
 } from '@/runtime/devMock'
 import {
   deployProjectSkillOrchestrated,
@@ -159,6 +161,43 @@ export interface ProjectDetailResponse {
   error?: string
 }
 
+export const PROJECT_PERMISSION_KEYS = [
+  'add_skill',
+  'remove_skill',
+  'deploy_skill',
+  'push_changes',
+  'pull_updates',
+  'merge_conflicts',
+  'manage_tracking',
+] as const
+
+export type ProjectPermissionKey = (typeof PROJECT_PERMISSION_KEYS)[number]
+export type ProjectPermissionMap = Record<ProjectPermissionKey, boolean>
+
+/** 后端未显式配置时沿用的项目成员默认权限，兼容已有项目。 */
+export const DEFAULT_PROJECT_MEMBER_PERMISSIONS: ProjectPermissionMap = {
+  add_skill: true,
+  remove_skill: true,
+  deploy_skill: true,
+  push_changes: true,
+  pull_updates: true,
+  merge_conflicts: true,
+  manage_tracking: true,
+}
+
+export interface ProjectPermissionsResponse {
+  success: boolean
+  project_id?: string
+  member_permissions: ProjectPermissionMap
+  effective_permissions: ProjectPermissionMap
+  role: string
+  can_manage: boolean
+  updated_by: string | null
+  updated_by_name?: string | null
+  updated_at: string | null
+  error?: string
+}
+
 export interface SyncStatusItem {
   skill_id: string
   version: number
@@ -240,6 +279,30 @@ export async function getProject(
   if (DEV_SKIP_AUTH) return devMockProjectDetail(projectId)
   const { data } = await apiClient.get<ProjectDetailResponse>(
     `/projects/${projectId}`,
+  )
+  return data
+}
+
+export async function getProjectPermissions(
+  projectId: string,
+): Promise<ProjectPermissionsResponse> {
+  if (DEV_SKIP_AUTH) return devMockProjectPermissions(projectId)
+  const { data } = await apiClient.get<ProjectPermissionsResponse>(
+    `/projects/${projectId}/permissions`,
+  )
+  return data
+}
+
+export async function updateProjectPermissions(
+  projectId: string,
+  memberPermissions: ProjectPermissionMap,
+): Promise<ProjectPermissionsResponse> {
+  if (DEV_SKIP_AUTH) {
+    return devMockUpdateProjectPermissions(projectId, memberPermissions)
+  }
+  const { data } = await apiClient.put<ProjectPermissionsResponse>(
+    `/projects/${projectId}/permissions`,
+    { member_permissions: memberPermissions },
   )
   return data
 }

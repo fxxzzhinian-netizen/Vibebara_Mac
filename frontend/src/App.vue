@@ -4,6 +4,7 @@ import InputDialog from '@/components/InputDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ChoiceDialog from '@/components/ChoiceDialog.vue'
 import AppToast from '@/components/AppToast.vue'
+import DesktopUpdatePrompt from '@/components/DesktopUpdatePrompt.vue'
 </script>
 
 <template>
@@ -21,6 +22,7 @@ import AppToast from '@/components/AppToast.vue'
     <ConfirmDialog />
     <ChoiceDialog />
     <AppToast />
+    <DesktopUpdatePrompt />
   </div>
 </template>
 

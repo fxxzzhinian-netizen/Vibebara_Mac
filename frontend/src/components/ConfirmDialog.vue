@@ -13,7 +13,7 @@ import BaseModal from '@/components/BaseModal.vue'
     <p class="cd-message">{{ confirmState.message }}</p>
 
     <template #footer>
-      <button class="cd-btn" type="button" @click="rejectConfirm">
+      <button class="cd-btn cd-btn-cancel" type="button" @click="rejectConfirm">
         {{ confirmState.cancelText }}
       </button>
       <button
@@ -54,6 +54,18 @@ import BaseModal from '@/components/BaseModal.vue'
 .cd-btn:hover {
   border-color: #d1d5db;
   color: #151717;
+}
+
+.cd-btn-cancel {
+  border: 0;
+  background: transparent;
+  color: #000000;
+}
+
+.cd-btn-cancel:hover {
+  border-color: transparent;
+  background: #f3f4f6;
+  color: #000000;
 }
 
 .cd-btn-primary {

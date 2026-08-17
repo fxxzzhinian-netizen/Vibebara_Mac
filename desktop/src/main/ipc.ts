@@ -6,6 +6,7 @@ import {
 import {
   IPC,
   type CliAuthorizationRequest,
+  type DesktopUpdateState,
   type LauncherLaunchRequest,
   type RuntimeConfigPayload,
 } from "../shared/types";
@@ -25,6 +26,9 @@ export function registerIpc(deps: {
   isTrustedSender: (url: string) => boolean;
   /** 回写云端铸造的规范 device_id（M5-b 注册后）；返回回写后的有效 deviceId。 */
   persistDeviceId: (deviceId: string) => string;
+  getUpdateState: () => DesktopUpdateState;
+  checkForUpdate: () => Promise<DesktopUpdateState>;
+  installUpdate: () => boolean;
 }): void {
   const senderUrl = (event: IpcMainEvent | IpcMainInvokeEvent): string =>
     event.senderFrame?.url || event.sender.getURL();
@@ -89,4 +93,18 @@ export function registerIpc(deps: {
       }
     },
   );
+
+  // —— 桌面自动更新：状态可查询，事件另由主进程主动推送 ——
+  ipcMain.handle(IPC.UPDATE_GET_STATE, (event: IpcMainInvokeEvent) => {
+    assertTrusted(event);
+    return deps.getUpdateState();
+  });
+  ipcMain.handle(IPC.UPDATE_CHECK, (event: IpcMainInvokeEvent) => {
+    assertTrusted(event);
+    return deps.checkForUpdate();
+  });
+  ipcMain.handle(IPC.UPDATE_INSTALL, (event: IpcMainInvokeEvent) => {
+    assertTrusted(event);
+    return deps.installUpdate();
+  });
 }

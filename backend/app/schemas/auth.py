@@ -1,5 +1,11 @@
-from pydantic import BaseModel
-from typing import Optional
+import re
+from datetime import date
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class RegisterRequest(BaseModel):
@@ -34,6 +40,11 @@ class UserInfo(BaseModel):
     display_name: str
     email: Optional[str] = None
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    gender: Optional[str] = None
+    birthday: Optional[date] = None
+    locale: Optional[str] = None
+    location: Optional[str] = None
     created_at: Optional[str] = None
     # 首次登录引导状态与选择
     onboarded: bool = False
@@ -52,6 +63,67 @@ class UserResponse(BaseModel):
     error: Optional[str] = None
 
 
+class ProfileUpdateRequest(BaseModel):
+    """个人资料部分更新；未传字段保持不变，空字符串按字段约定清空。"""
+
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    email: Optional[str] = Field(default=None, max_length=256)
+    phone: Optional[str] = Field(default=None, max_length=32)
+    gender: Optional[Literal["male", "female", "other", "unspecified"]] = None
+    birthday: Optional[date] = None
+    locale: Optional[str] = Field(default=None, max_length=16)
+    location: Optional[str] = Field(default=None, max_length=256)
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is None:
+            raise ValueError("display_name 不能为空")
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("display_name 不能为空")
+        return value
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        value = value.strip().lower()
+        if not value:
+            return None
+        if len(value) > 256 or not _EMAIL_RE.fullmatch(value):
+            raise ValueError("邮箱格式不正确")
+        return value
+
+    @field_validator("phone", "locale", "location", mode="before")
+    @classmethod
+    def trim_clearable_text(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        return value.strip() or None
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def clear_empty_gender(cls, value):
+        if isinstance(value, str):
+            return value.strip().lower() or None
+        return value
+
+    @field_validator("birthday")
+    @classmethod
+    def validate_birthday(cls, value):
+        if value is not None and value > date.today():
+            raise ValueError("生日不能晚于今天")
+        return value
+
+
 class OnboardingRequest(BaseModel):
     # 使用场景偏好：'solo' = 个人独立开发 / 'team' = 团队协同开发
     dev_mode: str
@@ -68,6 +140,11 @@ class GenerateApiKeyResponse(BaseModel):
     success: bool
     api_key: str = ""
     error: Optional[str] = None
+
+
+class ApiKeyStatusResponse(BaseModel):
+    success: bool
+    has_api_key: bool = False
 
 
 class CaptchaChallengeResponse(BaseModel):

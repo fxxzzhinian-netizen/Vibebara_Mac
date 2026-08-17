@@ -88,6 +88,12 @@ async def _migrate_add_columns() -> None:
         ("users", "favorite_tool", "VARCHAR(32) NULL"),
         # 平台管理员标记：可审核 SKILL 市场发布（种子用户除外，按用户名判定）。
         ("users", "is_platform_admin", "TINYINT(1) NOT NULL DEFAULT 0"),
+        # 个人资料：均允许为空，display_name/email/avatar_url 为 users 表既有列。
+        ("users", "phone", "VARCHAR(32) NULL"),
+        ("users", "gender", "VARCHAR(16) NULL"),
+        ("users", "birthday", "DATE NULL"),
+        ("users", "locale", "VARCHAR(16) NULL"),
+        ("users", "location", "VARCHAR(256) NULL"),
     ]
     async with engine.begin() as conn:
         for table, column, col_def in migrations:

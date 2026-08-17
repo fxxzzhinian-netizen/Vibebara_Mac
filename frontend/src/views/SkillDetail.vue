@@ -84,21 +84,33 @@ const db = computed(() => detail.value?.db ?? null)
 const vibeh = computed(() => detail.value?.vibeh_content ?? '')
 const isTeamSkill = computed(() => db.value?.scope === 'team')
 
-// 团队（平台）仓库：所属团队的任意成员均可直接编辑
-const isTeamMember = computed(() => {
+const currentTeamMember = computed(() => {
   const tid = db.value?.team_id
-  if (!tid) return false
-  return teamStore.teams.some((t) => t.id === tid)
+  const userId = authStore.user?.id
+  if (!tid || !userId || teamStore.currentTeamId !== tid) return null
+  return teamStore.members.find((member) => member.user_id === userId) ?? null
 })
-const canEdit = computed(() => isTeamSkill.value && isTeamMember.value)
+const isTeamMember = computed(() => currentTeamMember.value !== null)
+const canEdit = computed(
+  () =>
+    isTeamSkill.value &&
+    ['owner', 'admin'].includes(currentTeamMember.value?.role ?? ''),
+)
 
-// 编辑态（仅对团队 Skill 开放）
+function guardTeamSkillWrite(): boolean {
+  if (canEdit.value) return true
+  toast.warning('只有团队所有者或管理员可以修改团队 Skill')
+  return false
+}
+
+// 编辑态（仅对团队 owner/admin 开放）
 const editing = ref(false)
 const saving = ref(false)
 const draft = ref<Record<string, any> | null>(null)
 const draftVibeh = ref('')
 
 function startEdit() {
+  if (!guardTeamSkillWrite()) return
   draft.value = JSON.parse(JSON.stringify(cfg.value ?? {}))
   draftVibeh.value = vibeh.value
   editing.value = true
@@ -141,6 +153,7 @@ function setDraftNested(parent: string, key: string, val: unknown) {
 }
 
 function onResourceEdit(kind: 'scripts' | 'references' | 'assets', val: string) {
+  if (!guardTeamSkillWrite()) return
   try {
     setDraftNested('resources', kind, JSON.parse(val || '[]'))
   } catch {
@@ -152,12 +165,14 @@ function onResourceEdit(kind: 'scripts' | 'references' | 'assets', val: string) 
 const showSaveConfirm = ref(false)
 
 function save() {
+  if (!guardTeamSkillWrite()) return
   if (!draft.value) return
   showSaveConfirm.value = true
 }
 
 // createVersion=true 创建新版本；false 仅保存内容。由确认弹窗的两个按钮分别触发。
 async function doSave(createVersion: boolean) {
+  if (!guardTeamSkillWrite()) return
   if (!draft.value) return
   showSaveConfirm.value = false
   let versionNumber = ''
@@ -266,6 +281,9 @@ const viewLoading = ref(false)
 // 开发者模式：?mock=1 / localStorage 强制用模拟数据；dev 构建下真实数据为空/报错时也会自动回退
 const devMockForced = isMockForced()
 const devMock = ref(devMockForced)
+const canRestoreVersion = computed(
+  () => canEdit.value || (!isTeamSkill.value && devMock.value),
+)
 
 async function loadVersions() {
   // 强制模拟：跳过后端请求，直接填充模拟数据
@@ -312,6 +330,7 @@ watch(activeTab, (tab) => {
 // 平台结构改动经 skillStore 暂存（dirty），与基本信息的 draft/版本流相互独立，单独保存。
 const platformSaving = ref(false)
 async function savePlatform() {
+  if (!guardTeamSkillWrite()) return
   platformSaving.value = true
   try {
     await skillStore.saveCurrentSkill()
@@ -447,6 +466,10 @@ function closeVersionView() {
 }
 
 async function restore(v: SkillVersionItem) {
+  if (!canRestoreVersion.value) {
+    guardTeamSkillWrite()
+    return
+  }
   const ok = await confirmDialog({
     title: '回滚版本',
     message: `确认回滚到版本 v${versionNumberOf(v)}？\n\n团队仓库内容将被还原为该版本，并生成一条新的回滚版本；其他成员可在项目页「更新本地」拉取。`,
@@ -528,6 +551,16 @@ const view = computed<Record<string, any>>(() =>
   editing.value && draft.value ? draft.value : (cfg.value ?? {}),
 )
 
+async function ensureTeamRole(teamId: string | null | undefined) {
+  if (!teamId) return
+  const hasCurrentMember =
+    teamStore.currentTeamId === teamId &&
+    teamStore.members.some((member) => member.user_id === authStore.user?.id)
+  if (!hasCurrentMember) {
+    await teamStore.selectTeam(teamId)
+  }
+}
+
 async function load() {
   if (!skillId.value) return
   editing.value = false
@@ -538,6 +571,9 @@ async function load() {
     const res = await getNativeSkill(skillId.value)
     if (res.success) {
       detail.value = res
+      if (res.db?.scope === 'team') {
+        await ensureTeamRole(res.db.team_id)
+      }
     } else {
       detail.value = null
       error.value = res.error || '加载失败'
@@ -576,10 +612,12 @@ const showDeleteSkill = ref(false)
 const deletingSkill = ref(false)
 
 function askDeleteSkill() {
+  if (!guardTeamSkillWrite()) return
   showDeleteSkill.value = true
 }
 
 async function confirmDeleteSkill() {
+  if (!guardTeamSkillWrite()) return
   if (deletingSkill.value) return
   deletingSkill.value = true
   try {
@@ -1049,7 +1087,7 @@ function timeAgo(ts: string | null | undefined): string {
                             </button>
                             <button class="btn-xs" :disabled="viewLoading" @click="viewVersion(v)">查看版本</button>
                             <button
-                              v-if="canEdit || devMock"
+                              v-if="canRestoreVersion"
                               class="btn-xs danger"
                               :disabled="restoringId === v.id"
                               @click="restore(v)"

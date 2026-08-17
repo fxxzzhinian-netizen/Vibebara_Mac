@@ -2,6 +2,38 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Dict, List, Optional
 
 
+class ProjectMemberPermissions(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    add_skill: bool
+    remove_skill: bool
+    deploy_skill: bool
+    push_changes: bool
+    pull_updates: bool
+    merge_conflicts: bool
+    manage_tracking: bool
+
+
+class ProjectPermissionUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    member_permissions: ProjectMemberPermissions
+
+
+class ProjectPermissionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    success: bool
+    project_id: str
+    member_permissions: ProjectMemberPermissions
+    effective_permissions: ProjectMemberPermissions
+    role: str
+    can_manage: bool
+    updated_by: Optional[str] = None
+    updated_by_name: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 class ProjectCreateRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 

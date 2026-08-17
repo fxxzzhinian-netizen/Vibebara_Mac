@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useTeamStore } from '@/stores/teamStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { generateApiKey } from '@/api/auth'
+import { generateApiKey, getApiKeyStatus } from '@/api/auth'
 import { toast } from '@/composables/useToast'
+import { confirmDialog } from '@/composables/useConfirmDialog'
 import { useSlideIndicator } from '@/composables/useSlideIndicator'
 import BaseModal from '@/components/BaseModal.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
+import ProfileDrawer from '@/views/Profile.vue'
 import { getDesktopBridge, isDesktop } from '@/runtime/desktopBridge'
 import { getRuntimeConfig } from '@/runtime/config'
 import logoUrl from '@/img/logo.png'
+import logoIconUrl from '@/img/logo_icon.png'
 
 // 桌面壳（Electron）下隐藏了原生标题栏，顶栏需充当窗口拖动区，并为右上角原生窗口按钮留白。
 const desktop = isDesktop()
@@ -33,6 +37,16 @@ const searchQuery = ref('')
 const cliAuthorizing = ref(false)
 const cliKeyModalOpen = ref(false)
 const generatedCliKey = ref('')
+const hasCliApiKey = ref(false)
+const cliHelpOpen = ref(false)
+const profileDrawerOpen = ref(false)
+const profileDrawerRef = ref<InstanceType<typeof ProfileDrawer> | null>(null)
+const cliActionLabel = computed(() => {
+  if (cliAuthorizing.value) {
+    return hasCliApiKey.value ? '正在轮换…' : '正在生成…'
+  }
+  return hasCliApiKey.value ? '轮换 CLI API Key' : '生成 CLI API Key'
+})
 
 // 中间导航项随当前空间动态变化：
 //   个人空间 → SKILL 仓库 / SKILL 市场
@@ -105,12 +119,14 @@ function goHome() {
 const displayName = computed(
   () => authStore.user?.display_name || authStore.user?.username || '未登录',
 )
-
-const userInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
+const accountIdentifier = computed(
+  () => authStore.user?.email || (authStore.user?.username ? `@${authStore.user.username}` : ''),
+)
 
 function closeUserMenu() {
   userMenuOpen.value = false
   spaceMenuOpen.value = false
+  cliHelpOpen.value = false
 }
 
 function toggleSpaceMenu() {
@@ -182,6 +198,18 @@ function toggleUserMenu() {
   }
 }
 
+function goProfile() {
+  closeUserMenu()
+  profileDrawerOpen.value = true
+}
+
+async function openProfileAvatar() {
+  closeUserMenu()
+  profileDrawerOpen.value = true
+  await nextTick()
+  profileDrawerRef.value?.openAvatarDialog()
+}
+
 function logout() {
   closeUserMenu()
   authStore.logout()
@@ -190,13 +218,17 @@ function logout() {
 
 async function authorizeCli() {
   if (cliAuthorizing.value) return
-  if (
-    !window.confirm(
-      '为 CLI 生成新的长期凭据？继续后会吊销此前生成的 CLI API Key。',
-    )
-  ) {
-    return
-  }
+  const rotating = hasCliApiKey.value
+  closeUserMenu()
+  const confirmed = await confirmDialog({
+    title: rotating ? '轮换 CLI API Key' : '生成 CLI API Key',
+    message: rotating
+      ? '轮换后，当前 CLI、终端或 CI 中使用的旧 Key 会立即失效。'
+      : '该长期凭证的明文仅在签发时返回一次，请妥善保存。',
+    confirmText: rotating ? '确认轮换' : '确认生成',
+    cancelText: '取消',
+  })
+  if (!confirmed) return
 
   cliAuthorizing.value = true
   try {
@@ -213,6 +245,8 @@ async function authorizeCli() {
     if (!issued.success || !issued.api_key) {
       throw new Error(issued.error || 'API Key 生成失败')
     }
+    // 云端签发成功即视为已有凭证；即使后续桌面自动写盘失败，旧 Key 也已被轮换。
+    hasCliApiKey.value = true
 
     if (bridge) {
       try {
@@ -270,6 +304,13 @@ function onClickOutside(e: MouseEvent) {
 onMounted(async () => {
   workspace.init()
   document.addEventListener('click', onClickOutside)
+  void getApiKeyStatus()
+    .then((result) => {
+      hasCliApiKey.value = result.success && result.has_api_key
+    })
+    .catch(() => {
+      // 状态探测失败不阻塞菜单；真正生成时仍由受认证接口校验。
+    })
   // 团队列表既是切换器选项，也用于校准持久化的选中团队是否仍有效。
   await teamStore.fetchTeams()
   workspace.ensureTeamValid(teamStore.teams)
@@ -289,6 +330,7 @@ onBeforeUnmount(() => {
       <!-- 左：logo -->
       <div class="nav-brand" @click="goHome">
         <img :src="logoUrl" alt="logo" class="brand-logo" />
+        <img :src="logoIconUrl" alt="logo" class="brand-logo-compact" />
       </div>
 
       <!-- 中：分选栏（居中于视口中心线） -->
@@ -337,19 +379,57 @@ onBeforeUnmount(() => {
         <!-- 头像（点击展开：用户信息 + 空间切换 + 退出） -->
         <div ref="userMenuRef" class="user-menu">
         <button class="user-btn" :title="displayName" @click.stop="toggleUserMenu">
-          <span class="user-avatar">{{ userInitial }}</span>
+          <UserAvatar
+            class="nav-user-avatar"
+            :name="displayName"
+            :src="authStore.user?.avatar_url"
+            :size="42"
+          />
         </button>
 
         <transition name="dropdown">
           <div v-if="userMenuOpen" class="dropdown user-dropdown">
-            <div class="user-meta">
-              <div class="user-meta-name">{{ displayName }}</div>
-              <div v-if="authStore.user?.username" class="user-meta-username">
-                @{{ authStore.user.username }}
+            <section class="account-overview" aria-label="当前账号">
+              <div class="account-overview-top">
+                <span class="account-identifier">{{ accountIdentifier }}</span>
+                <button
+                  type="button"
+                  class="account-overview-close"
+                  aria-label="关闭账号菜单"
+                  title="关闭"
+                  @click.stop="closeUserMenu"
+                >
+                  ×
+                </button>
               </div>
-            </div>
 
-            <div class="dropdown-divider"></div>
+              <div class="account-avatar-wrap">
+                <UserAvatar
+                  class="account-overview-avatar"
+                  :name="displayName"
+                  :src="authStore.user?.avatar_url"
+                  :size="82"
+                />
+                <button
+                  type="button"
+                  class="account-avatar-camera"
+                  aria-label="更换个人头像"
+                  title="更换个人头像"
+                  @click.stop="openProfileAvatar"
+                >
+                  <svg viewBox="0 0 1024 1024">
+                    <path d="M896.4 296.6l-0.1 0.1c-20.5-21.1-48.8-32.7-78.2-32.1h-96.2l-22.1-58.2c-6.3-14.5-16.5-27-29.5-36-12.9-9.8-28.5-15.4-44.6-16H404.8c-16 0.5-31.5 6.1-44.1 16-13.1 9-23.3 21.5-29.7 36l-24 58.2h-98.2c-29.4-0.6-57.7 11-78.2 32.1-21.1 20.5-32.7 48.8-32.1 78.1v386.9c-0.6 29.4 11 57.7 32.1 78.2 20.5 21.1 48.8 32.7 78.2 32.1h609.4c29.3 0.2 57.5-11.4 78.2-32.1 20.7-20.7 32.3-48.9 32.1-78.2V374.8c0.6-29.4-11-57.7-32.1-78.2zM513.5 743.7c-100.7 0-182.4-81.6-182.4-182.3 0-100.7 81.6-182.4 182.3-182.4 100.7 0 182.4 81.6 182.4 182.3-0.3 100.6-81.7 182.1-182.3 182.4z m0-302.7C445.8 441 391 495.9 391 563.5c0 67.7 54.9 122.5 122.5 122.5 67.7 0 122.5-54.9 122.5-122.5 0.3-32.6-12.5-63.9-35.6-86.9-23-23.1-54.3-35.9-86.9-35.6z" />
+                  </svg>
+                </button>
+              </div>
+
+              <p class="account-greeting">{{ displayName }}，您好！</p>
+              <button type="button" class="manage-profile-btn" @click="goProfile">
+                管理您的个人账号信息
+              </button>
+            </section>
+
+            <div class="account-menu-divider" role="separator"></div>
 
             <!-- 空间选择：悬停（桌面）/ 点击（触屏）向左展开二级面板，再具体选择空间 -->
             <div :class="['submenu-wrap', { open: spaceMenuOpen }]">
@@ -461,21 +541,48 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="dropdown-divider"></div>
-            <button
-              class="dropdown-item cli-auth"
-              :disabled="cliAuthorizing"
-              @click="authorizeCli"
-            >
-              {{ cliAuthorizing ? '正在授权…' : desktop ? '为 CLI 授权' : '生成 CLI API Key' }}
-            </button>
-            <div class="dropdown-divider"></div>
+            <div class="account-menu-divider" role="separator"></div>
+            <div class="cli-auth-row">
+              <button
+                class="dropdown-item cli-auth"
+                :disabled="cliAuthorizing"
+                @click="authorizeCli"
+              >
+                <span class="item-label">{{ cliActionLabel }}</span>
+              </button>
+              <div :class="['cli-help-wrap', { open: cliHelpOpen }]">
+                <button
+                  type="button"
+                  class="cli-help-tag"
+                  :aria-expanded="cliHelpOpen"
+                  aria-label="查看 CLI API Key 说明"
+                  aria-describedby="cli-api-key-help"
+                  @click.stop="cliHelpOpen = !cliHelpOpen"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9.5" />
+                    <path d="M9.7 9a2.45 2.45 0 0 1 4.7.95c0 1.8-2.4 2.05-2.4 3.75" />
+                    <circle class="cli-help-dot" cx="12" cy="17.1" r="0.8" />
+                  </svg>
+                </button>
+                <div id="cli-api-key-help" class="cli-help-popover" role="tooltip" @click.stop>
+                  <strong>CLI API Key</strong>
+                  <p>用于在 Vibebara CLI 中登录你的账号，访问云端项目和 Skill。</p>
+                  <p v-if="hasCliApiKey" class="cli-help-warning">
+                    如果 Key 泄露或需要重新配置，可以轮换；之后请使用新 Key 重新登录 CLI。
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="account-menu-divider" role="separator"></div>
             <button class="dropdown-item logout" @click="logout">退出登录</button>
           </div>
         </transition>
         </div>
       </div>
     </div>
+
+    <ProfileDrawer ref="profileDrawerRef" v-model="profileDrawerOpen" />
 
     <!-- 创建团队弹窗 -->
     <BaseModal
@@ -586,6 +693,13 @@ onBeforeUnmount(() => {
   display: block;
   /* 视觉上微调上移，校正 logo 图内留白带来的偏低观感 */
   transform: translateY(-5px);
+}
+
+.brand-logo-compact {
+  display: none;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
 }
 
 /* —— 中：分选栏（纯文字，无边框 / 无卡片，居中于视口中心线） —— */
@@ -787,6 +901,7 @@ onBeforeUnmount(() => {
 
 .dropdown-item.selected {
   font-weight: 600;
+  background: #f1f3f4;
 }
 
 .item-label {
@@ -803,7 +918,7 @@ onBeforeUnmount(() => {
 
 .dropdown-divider {
   height: 1px;
-  background: #f0f1f3;
+  background: #d9dfe7;
   margin: 0.3rem 0.4rem;
 }
 
@@ -876,7 +991,20 @@ onBeforeUnmount(() => {
 
 .submenu-wrap:hover .space-trigger,
 .submenu-wrap.open .space-trigger {
-  background: #f6f7f8;
+  background: #e6ebf2;
+}
+
+.submenu .dropdown-item:not(.team-action):hover {
+  background: #e8edf4;
+}
+
+.submenu .dropdown-item.team-action:hover {
+  background: #f4f5f7;
+}
+
+.submenu > .dropdown-divider {
+  height: 1.5px;
+  background: #cbd3dd;
 }
 
 .submenu-wrap:hover .submenu,
@@ -916,50 +1044,179 @@ onBeforeUnmount(() => {
   box-shadow: 0 2px 8px rgba(21, 23, 23, 0.18);
 }
 
-.user-avatar {
-  width: 42px;
-  height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.nav-user-avatar {
   border: 2px solid #ffffff;
-  border-radius: 50%;
-  background: #151717;
-  color: #ffffff;
-  font-size: 1.05rem;
-  font-weight: 600;
-  user-select: none;
+  box-sizing: content-box;
 }
 
 .user-dropdown {
-  min-width: 200px;
+  width: min(330px, calc(100vw - 24px));
+  background: #eef3fb;
   /* 覆盖 .dropdown 的 overflow: hidden，否则向左飞出的二级面板会被裁切 */
   overflow: visible;
 }
 
-.user-meta {
+.account-overview {
+  margin: -0.4rem -0.4rem 0.35rem;
+  padding: 15px 18px 20px;
+  border-radius: 14px 14px 20px 20px;
+  background: transparent;
+  text-align: center;
+}
+
+.account-overview-top {
+  position: relative;
+  min-height: 32px;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.4rem;
-  padding: 0.55rem 0.7rem 0.45rem;
+  align-items: center;
+  justify-content: center;
 }
 
-.user-meta-name {
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: #151717;
-  white-space: nowrap;
+.account-identifier {
+  max-width: calc(100% - 56px);
   overflow: hidden;
+  color: #303134;
+  font-size: 13px;
+  font-weight: 600;
   text-overflow: ellipsis;
-  min-width: 0;
+  white-space: nowrap;
 }
 
-.user-meta-username {
-  font-size: 0.78rem;
-  color: #9ca3af;
-  white-space: nowrap;
-  flex-shrink: 0;
+.account-overview-close {
+  position: absolute;
+  top: -4px;
+  right: -7px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #5f6368;
+  font: inherit;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.account-overview-close:hover,
+.account-overview-close:focus-visible {
+  background: rgba(60, 64, 67, 0.1);
+  color: #202124;
+  outline: none;
+}
+
+.account-avatar-wrap {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  padding: 5px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    #4285f4,
+    #34a853,
+    #fbbc05,
+    #ea4335,
+    #4285f4
+  );
+}
+
+.account-overview-avatar {
+  border: 3px solid #eef3fb;
+  box-sizing: content-box;
+}
+
+.account-avatar-camera {
+  position: absolute;
+  right: -4px;
+  bottom: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 3px solid #eef3fb;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #000000;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.account-avatar-camera svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.account-avatar-camera:hover,
+.account-avatar-camera:focus-visible {
+  background: #000000;
+  color: #ffffff;
+  outline: none;
+}
+
+.account-avatar-camera:active {
+  transform: scale(0.94);
+}
+
+.account-greeting {
+  margin: 12px 0 14px;
+  color: #202124;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.manage-profile-btn {
+  min-height: 38px;
+  padding: 0 18px;
+  border: 2px solid #005ea8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #005ea8;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.manage-profile-btn:hover,
+.manage-profile-btn:focus-visible {
+  background: #005ea8;
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 3px #eef3fb,
+    0 1px 3px rgba(60, 64, 67, 0.15);
+  outline: none;
+}
+
+.account-menu-divider {
+  width: calc(100% - 12px);
+  height: 0;
+  flex: 0 0 auto;
+  margin: 6px;
+  border: 0;
+  border-top: 1.5px solid rgba(60, 64, 67, 0.2);
+}
+
+.user-dropdown > .dropdown-item:hover,
+.user-dropdown > .cli-auth-row > .dropdown-item:hover,
+.user-dropdown > .submenu-wrap > .dropdown-item:hover,
+.user-dropdown > .submenu-wrap.open > .dropdown-item {
+  background: rgba(255, 255, 255, 0.78);
 }
 
 .dropdown-item.logout {
@@ -970,8 +1227,117 @@ onBeforeUnmount(() => {
   background: #fef2f2;
 }
 
+.cli-auth-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .dropdown-item.cli-auth {
-  font-weight: 600;
+  min-width: 0;
+  flex: 1;
+}
+
+.user-dropdown > .submenu-wrap > .space-trigger,
+.user-dropdown > .cli-auth-row > .cli-auth,
+.user-dropdown > .logout {
+  font-weight: 500;
+}
+
+.cli-help-wrap {
+  position: relative;
+  flex-shrink: 0;
+  margin-right: 0.7rem;
+}
+
+.cli-help-tag {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #687386;
+  cursor: help;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cli-help-tag svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cli-help-tag .cli-help-dot {
+  fill: currentColor;
+  stroke: none;
+}
+
+.cli-help-tag:hover,
+.cli-help-tag:focus-visible,
+.cli-help-wrap.open .cli-help-tag {
+  background: rgba(255, 255, 255, 0.72);
+  color: #1f4f8f;
+  outline: none;
+}
+
+.cli-help-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 9px);
+  z-index: 20;
+  width: min(286px, calc(100vw - 48px));
+  padding: 13px 14px;
+  border: 1px solid #dfe5ed;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #3c4043;
+  box-shadow: 0 10px 28px rgba(21, 23, 23, 0.16);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(5px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s linear 0.15s;
+}
+
+.cli-help-popover strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #202124;
+  font-size: 13px;
+}
+
+.cli-help-popover p {
+  margin: 0;
+}
+
+.cli-help-popover p + p {
+  margin-top: 7px;
+}
+
+.cli-help-popover .cli-help-warning {
+  color: #9a5a00;
+}
+
+.cli-help-wrap:hover .cli-help-popover,
+.cli-help-wrap:focus-within .cli-help-popover,
+.cli-help-wrap.open .cli-help-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s;
 }
 
 .dropdown-item:disabled {
@@ -1084,10 +1450,56 @@ onBeforeUnmount(() => {
   word-break: break-all;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 980px) {
   .nav-inner {
-    padding: 0 1rem;
-    gap: 1rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 0 0.85rem;
+    gap: 0.55rem;
+  }
+
+  .brand-logo {
+    width: 116px;
+    height: auto;
+  }
+
+  .nav-links {
+    min-width: 0;
+    gap: 0.15rem;
+  }
+
+  .nav-item {
+    width: auto;
+    min-width: 0;
+    padding: 0.66rem 0.6rem;
+    font-size: 0.88rem;
+  }
+
+  .container-input {
+    display: none;
+  }
+
+  .nav-right {
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 980px) {
+  .brand-logo {
+    display: none;
+  }
+
+  .brand-logo-compact {
+    display: block;
+  }
+
+  .nav-item {
+    padding-inline: 0.45rem;
+    font-size: 0.82rem;
+  }
+
+  .nav-user-avatar {
+    width: 36px !important;
+    height: 36px !important;
   }
 }
 </style>

@@ -10,9 +10,10 @@ import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Mapping, Optional
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.database import async_session_factory
@@ -212,6 +213,63 @@ async def get_user_by_id(user_id: str) -> Optional[User]:
         return await session.get(User, user_id)
 
 
+async def update_profile(user_id: str, updates: Mapping[str, Any]) -> dict:
+    """部分更新个人资料；调用方应传入 schema 的 exclude_unset 结果。"""
+    allowed_fields = {
+        "display_name",
+        "email",
+        "phone",
+        "gender",
+        "birthday",
+        "locale",
+        "location",
+    }
+    values = {key: value for key, value in updates.items() if key in allowed_fields}
+
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            return {"success": False, "error": "用户不存在"}
+
+        email = values.get("email")
+        if email:
+            duplicate = (
+                await session.execute(
+                    select(User).where(
+                        User.email == email,
+                        User.id != user_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if duplicate:
+                return {"success": False, "error": "该邮箱已被其他账号使用"}
+
+        for field, value in values.items():
+            setattr(user, field, value)
+        if values:
+            user.updated_at = datetime.utcnow()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            return {"success": False, "error": "该邮箱已被其他账号使用"}
+        await session.refresh(user)
+        return {"success": True, "user": user}
+
+
+async def set_avatar_url(user_id: str, avatar_url: Optional[str]) -> dict:
+    """写入或清空头像路径，并显式推进 updated_at 供客户端缓存刷新。"""
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            return {"success": False, "error": "用户不存在"}
+        user.avatar_url = avatar_url
+        user.updated_at = datetime.utcnow()
+        await session.commit()
+        await session.refresh(user)
+        return {"success": True, "user": user}
+
+
 async def save_onboarding(
     user_id: str, dev_mode: str, favorite_tool: str
 ) -> dict:
@@ -235,6 +293,28 @@ async def generate_api_key(user_id: str) -> dict:
             return {"success": False, "error": "用户不存在"}
     raw_key = await create_pat(user_id, name="cli")
     return {"success": True, "api_key": raw_key}
+
+
+async def has_active_api_key(user_id: str) -> bool:
+    """返回用户当前是否持有未吊销、未过期的 CLI PAT。"""
+    now = datetime.utcnow()
+    async with async_session_factory() as session:
+        row = (
+            await session.execute(
+                select(AuthToken.id)
+                .where(
+                    AuthToken.user_id == user_id,
+                    AuthToken.kind == "pat",
+                    AuthToken.revoked_at.is_(None),
+                    or_(
+                        AuthToken.expires_at.is_(None),
+                        AuthToken.expires_at >= now,
+                    ),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return row is not None
 
 
 # =========================================================================

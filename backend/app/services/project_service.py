@@ -14,7 +14,7 @@ from app.core.database import async_session_factory
 from app.models.project import Project, ProjectSkill, UserSkillDeployment
 from app.models.skill_change_log import SkillChangeLog
 from app.models.skill_package import PersonalSkill, TeamSkill
-from app.models.team import Team
+from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.services.content_transfer import (
     build_install_tree,
@@ -1606,6 +1606,12 @@ async def list_user_deployments(user_id: str) -> List[Dict[str, Any]]:
     async with async_session_factory() as session:
         result = await session.execute(
             select(UserSkillDeployment)
+            .join(Project, Project.id == UserSkillDeployment.project_id)
+            .join(
+                TeamMember,
+                (TeamMember.team_id == Project.team_id)
+                & (TeamMember.user_id == user_id),
+            )
             .where(UserSkillDeployment.user_id == user_id)
             .order_by(
                 UserSkillDeployment.updated_at.desc(),

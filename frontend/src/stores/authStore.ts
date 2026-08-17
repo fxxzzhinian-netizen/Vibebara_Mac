@@ -5,7 +5,11 @@ import {
   login,
   getMe,
   saveOnboarding,
+  updateProfile,
+  uploadAvatar,
+  deleteAvatar,
   type UserInfo,
+  type UpdateProfilePayload,
 } from '@/api/auth'
 import { ensureDeviceRegistered } from '@/api/devices'
 import { getToken, setToken, removeToken } from '@/runtime/tokenStorage'
@@ -133,6 +137,67 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function saveProfile(payload: UpdateProfilePayload) {
+    if (DEV_SKIP_AUTH) {
+      user.value = {
+        ...(user.value ?? DEV_FAKE_USER),
+        ...payload,
+      }
+      return { success: true, user: user.value }
+    }
+    try {
+      const res = await updateProfile(payload)
+      if (res.success && res.user) user.value = res.user
+      return res
+    } catch (e: any) {
+      return {
+        success: false,
+        error: e?.response?.data?.detail || e?.response?.data?.error || e.message,
+      }
+    }
+  }
+
+  async function saveAvatar(file: File) {
+    if (DEV_SKIP_AUTH) {
+      const previewUrl = URL.createObjectURL(file)
+      user.value = {
+        ...(user.value ?? DEV_FAKE_USER),
+        avatar_url: previewUrl,
+      }
+      return { success: true, user: user.value }
+    }
+    try {
+      const res = await uploadAvatar(file)
+      if (res.success && res.user) user.value = res.user
+      return res
+    } catch (e: any) {
+      return {
+        success: false,
+        error: e?.response?.data?.detail || e?.response?.data?.error || e.message,
+      }
+    }
+  }
+
+  async function removeAvatar() {
+    if (DEV_SKIP_AUTH) {
+      user.value = {
+        ...(user.value ?? DEV_FAKE_USER),
+        avatar_url: null,
+      }
+      return { success: true, user: user.value }
+    }
+    try {
+      const res = await deleteAvatar()
+      if (res.success && res.user) user.value = res.user
+      return res
+    } catch (e: any) {
+      return {
+        success: false,
+        error: e?.response?.data?.detail || e?.response?.data?.error || e.message,
+      }
+    }
+  }
+
   function logout() {
     token.value = ''
     user.value = null
@@ -164,6 +229,9 @@ export const useAuthStore = defineStore('auth', () => {
     doLogin,
     fetchMe,
     completeOnboarding,
+    saveProfile,
+    saveAvatar,
+    removeAvatar,
     logout,
     init,
   }

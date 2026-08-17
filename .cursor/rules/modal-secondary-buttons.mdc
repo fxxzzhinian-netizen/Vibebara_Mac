@@ -1,0 +1,34 @@
+---
+description: 弹窗次要按钮使用无边框的纯底色与文字样式
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# 弹窗次要按钮规范
+
+- 弹窗中的取消、返回、稍后处理等次要按钮禁止描边，必须使用 `border: none`。
+- 按钮只保留纯色背景与文字；默认使用浅灰底，也可按现有界面使用透明底。
+- hover、active 和 disabled 状态仅调整背景、文字色或透明度，不得重新添加边框。
+- 主按钮、危险按钮可使用对应的实心语义色，但同样不应通过外描边制造层级。
+- 聚焦态使用 `outline` 或 `box-shadow` 提供键盘可访问性，不要用常驻边框代替。
+
+```css
+/* ❌ BAD */
+.modal-secondary {
+  border: 1px solid #dfe2e6;
+  background: #ffffff;
+  color: #4b5563;
+}
+
+/* ✅ GOOD */
+.modal-secondary {
+  border: none;
+  background: #f1f3f4;
+  color: #4b5563;
+}
+
+.modal-secondary:hover:not(:disabled) {
+  background: #e8eaed;
+  color: #202124;
+}
+```
