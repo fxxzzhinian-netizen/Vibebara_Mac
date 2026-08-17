@@ -19,7 +19,10 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-function deployment(installPath: string): UserSkillDeploymentInfo {
+function deployment(
+  installPath: string,
+  overrides: Partial<UserSkillDeploymentInfo> = {},
+): UserSkillDeploymentInfo {
   return {
     id: "dep-1",
     user_id: "user-1",
@@ -38,6 +41,7 @@ function deployment(installPath: string): UserSkillDeploymentInfo {
     last_seen_at: null,
     created_at: null,
     updated_at: null,
+    ...overrides,
   };
 }
 
@@ -68,5 +72,34 @@ describe("same-machine lock", () => {
     expect(() =>
       assertSameMachine(deployment(path.join(root, "missing"))),
     ).toThrow(/暂不支持跨机/);
+  });
+
+  it("accepts a natural install name for a team skill proxy id", () => {
+    const install = path.join(root, ".cursor", "skills", "develop-sop");
+    fs.mkdirSync(install, { recursive: true });
+    fs.writeFileSync(path.join(install, "SKILL.md"), "develop-sop");
+
+    expect(() =>
+      assertSameMachine(
+        deployment(install, {
+          team_skill_id: "develop-sop-team-1085ed85",
+          skill_name: "develop-sop-team-1085ed85",
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects an unrelated existing skill directory", () => {
+    const install = path.join(root, ".cursor", "skills", "other-skill");
+    fs.mkdirSync(install, { recursive: true });
+    fs.writeFileSync(path.join(install, "SKILL.md"), "other-skill");
+
+    expect(() =>
+      assertSameMachine(
+        deployment(install, {
+          team_skill_id: "develop-sop-team-1085ed85",
+        }),
+      ),
+    ).toThrow(/对应的本地 Skill/);
   });
 });

@@ -58,8 +58,9 @@ export function installDesktopUpdate(): boolean {
   if (!configured || state.status !== "downloaded") {
     return false;
   }
-  // 先让 IPC 响应返回渲染层，再退出并交给 NSIS 完成覆盖安装。
-  setImmediate(() => autoUpdater.quitAndInstall(false, true));
+  // 先让 IPC 响应返回渲染层，再静默退出、覆盖安装并自动重启。
+  // NSIS 仍会替换旧程序文件，但不再显示卸载/安装向导。
+  setImmediate(() => autoUpdater.quitAndInstall(true, true));
   return true;
 }
 

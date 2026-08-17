@@ -19,6 +19,7 @@ import AddSkillModal from '@/components/AddSkillModal.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import BaseSelect from '@/components/BaseSelect.vue'
 import SyncStatusBadge from '@/components/SyncStatusBadge.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
 import cursorIcon from '@/img/icon/cursor.svg'
 import codexIcon from '@/img/icon/codex.svg'
 import windsurfIcon from '@/img/icon/windsurf.svg'
@@ -701,9 +702,12 @@ watch(
                       :class="`member-card-${m.role}`"
                     >
                       <div class="member-card-head">
-                        <span class="member-avatar">
-                          {{ (m.display_name || m.username || '?').slice(0, 1).toUpperCase() }}
-                        </span>
+                        <UserAvatar
+                          class="member-avatar"
+                          :name="m.display_name || m.username"
+                          :src="m.avatar_url"
+                          :size="30"
+                        />
                         <div class="member-identity">
                           <strong>{{ m.display_name || m.username }}</strong>
                           <span v-if="m.display_name && m.username">@{{ m.username }}</span>
@@ -772,7 +776,12 @@ watch(
       <p class="assign-hint">仅所有者可调整成员角色。管理员可编辑团队信息。</p>
       <ul class="assign-list">
         <li v-for="m in teamStore.members" :key="m.user_id" class="assign-row">
-          <span class="member-avatar">{{ (m.display_name || m.username || '?').slice(0, 1).toUpperCase() }}</span>
+          <UserAvatar
+            class="member-avatar"
+            :name="m.display_name || m.username"
+            :src="m.avatar_url"
+            :size="30"
+          />
           <span class="assign-name">{{ m.display_name || m.username }}</span>
           <span v-if="m.role === 'owner'" class="member-role role-owner">所有者</span>
           <BaseSelect

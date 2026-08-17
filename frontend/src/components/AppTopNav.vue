@@ -18,6 +18,8 @@ import logoIconUrl from '@/img/logo_icon.png'
 
 // 桌面壳（Electron）下隐藏了原生标题栏，顶栏需充当窗口拖动区，并为右上角原生窗口按钮留白。
 const desktop = isDesktop()
+// 开发服务器中保留桌面专属入口，便于在浏览器里调整 UI；生产 Web 端仍隐藏。
+const showDesktopUpdateAction = desktop || import.meta.env.DEV
 
 // 全局顶部导航：左 logo / 中分选栏 / 右头像（点击展开：用户信息 + 空间切换 + 退出）。
 // 浅色（白底）风格，三栏栅格布局，分选栏与左右内容同一中心线对齐。
@@ -39,6 +41,7 @@ const cliKeyModalOpen = ref(false)
 const generatedCliKey = ref('')
 const hasCliApiKey = ref(false)
 const cliHelpOpen = ref(false)
+const updateChecking = ref(false)
 const profileDrawerOpen = ref(false)
 const profileDrawerRef = ref<InstanceType<typeof ProfileDrawer> | null>(null)
 const cliActionLabel = computed(() => {
@@ -214,6 +217,33 @@ function logout() {
   closeUserMenu()
   authStore.logout()
   router.push('/login')
+}
+
+async function checkDesktopUpdate() {
+  if (updateChecking.value) return
+  const updater = getDesktopBridge()?.update
+  if (!updater) {
+    toast.warning('仅桌面客户端支持检查更新')
+    return
+  }
+
+  updateChecking.value = true
+  try {
+    const state = await updater.check()
+    if (state.status === 'error') {
+      toast.error(state.message || '更新检查失败，请稍后重试')
+    } else if (state.status === 'downloaded') {
+      toast.success(`新版本 ${state.availableVersion || ''} 已下载，按提示重启即可安装`)
+    } else if (['available', 'downloading'].includes(state.status)) {
+      toast.info(`发现新版本 ${state.availableVersion || ''}，正在后台下载`)
+    } else {
+      toast.success(`当前已是最新版本 ${state.currentVersion}`)
+    }
+  } catch (error) {
+    toast.error((error as Error)?.message || '更新检查失败，请稍后重试')
+  } finally {
+    updateChecking.value = false
+  }
 }
 
 async function authorizeCli() {
@@ -575,6 +605,32 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="account-menu-divider" role="separator"></div>
+            <button
+              v-if="showDesktopUpdateAction"
+              type="button"
+              class="dropdown-item desktop-update"
+              :disabled="updateChecking"
+              @click="checkDesktopUpdate"
+            >
+              <span class="item-label">
+                {{ updateChecking ? '正在检查更新…' : '检查更新' }}
+              </span>
+              <svg
+                class="desktop-update-icon"
+                :class="{ spinning: updateChecking }"
+                viewBox="0 0 1024 1024"
+                aria-hidden="true"
+              >
+                <path
+                  d="M195.264 828.8a48 48 0 0 1 28.16-81.664l218.752-26.688a48 48 0 1 1 11.712 95.168l-98.048 12.032a352 352 0 0 0 508.16-315.776 48 48 0 1 1 96 0 448 448 0 0 1-764.672 316.864zM64 512a448 448 0 0 1 764.672-316.736 48 48 0 0 1-28.224 81.664l-218.688 26.688a47.936 47.936 0 1 1-11.712-95.104l98.048-12.096a352.32 352.32 0 0 0-508.224 315.648 48 48 0 1 1-96 0z"
+                />
+              </svg>
+            </button>
+            <div
+              v-if="showDesktopUpdateAction"
+              class="account-menu-divider"
+              role="separator"
+            ></div>
             <button class="dropdown-item logout" @click="logout">退出登录</button>
           </div>
         </transition>
@@ -1241,8 +1297,28 @@ onBeforeUnmount(() => {
 
 .user-dropdown > .submenu-wrap > .space-trigger,
 .user-dropdown > .cli-auth-row > .cli-auth,
+.user-dropdown > .desktop-update,
 .user-dropdown > .logout {
   font-weight: 500;
+}
+
+.desktop-update-icon {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: #687386;
+  fill: currentColor;
+}
+
+.desktop-update-icon.spinning {
+  animation: update-spin 0.8s linear infinite;
+}
+
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .cli-help-wrap {

@@ -20,6 +20,7 @@ class TeamMemberInfo(BaseModel):
     user_id: str
     username: str
     display_name: str
+    avatar_url: Optional[str] = None
     role: str
     joined_at: Optional[str] = None
 

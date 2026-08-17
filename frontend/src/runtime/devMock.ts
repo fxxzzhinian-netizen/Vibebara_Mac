@@ -337,6 +337,7 @@ function makeMember(
   return {
     username: partial.user_id,
     display_name: partial.user_id,
+    avatar_url: null,
     joined_at: NOW,
     ...partial,
   }

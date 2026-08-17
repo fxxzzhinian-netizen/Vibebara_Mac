@@ -41,10 +41,17 @@ def _team_to_dict(team: Team, member_count: int = 0) -> Dict[str, Any]:
 
 
 def _member_to_dict(member: TeamMember, user: User) -> Dict[str, Any]:
+    avatar_url = user.avatar_url
+    if avatar_url and user.updated_at:
+        version = user.updated_at.strftime("%Y%m%d%H%M%S%f")
+        separator = "&" if "?" in avatar_url else "?"
+        avatar_url = f"{avatar_url}{separator}updated_at={version}"
+
     return {
         "user_id": user.id,
         "username": user.username,
         "display_name": user.display_name,
+        "avatar_url": avatar_url,
         "role": member.role,
         "joined_at": member.joined_at.isoformat() if member.joined_at else None,
     }

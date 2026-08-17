@@ -15,6 +15,8 @@ const TOOL_MARKERS = [
   ".workbuddy",
 ];
 
+const TEAM_SKILL_SUFFIX = /-team-[0-9a-z]{1,12}$/i;
+
 export interface DeploymentSelector {
   deployment?: string;
   skill?: string;
@@ -108,6 +110,13 @@ export function assertSameMachine(
   deployment: UserSkillDeploymentInfo,
 ): void {
   const installPath = deployment.install_path;
+  const naturalSkillId =
+    deployment.team_skill_id.replace(TEAM_SKILL_SUFFIX, "") ||
+    deployment.team_skill_id;
+  const expectedSkillIds = new Set([
+    deployment.team_skill_id,
+    naturalSkillId,
+  ]);
   let stat: fs.Stats;
   try {
     stat = fs.statSync(installPath);
@@ -120,10 +129,10 @@ export function assertSameMachine(
   if (
     !stat.isDirectory() ||
     !fs.existsSync(path.join(installPath, "SKILL.md")) ||
-    path.basename(installPath) !== deployment.team_skill_id
+    !expectedSkillIds.has(path.basename(installPath))
   ) {
     throw new CliError(
-      `该部署登记在 ${installPath}，但目录不是 ${deployment.team_skill_id} Skill。请在本机重新部署；CLI 暂不支持跨机。`,
+      `该部署登记在 ${installPath}，但目录不是与 ${deployment.team_skill_id} 对应的本地 Skill。请在本机重新部署；CLI 暂不支持跨机。`,
       EXIT.LOCAL_DISK,
     );
   }

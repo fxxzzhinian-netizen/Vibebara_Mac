@@ -1933,7 +1933,7 @@ async function selectProjectSection(section: ProjectNavSection) {
 
 .project-metric:hover,
 .project-metric:active {
-  background: #8b929b;
+  background: #dfe2e6;
   box-shadow: none;
 }
 
@@ -1956,7 +1956,7 @@ async function selectProjectSection(section: ProjectNavSection) {
 .project-metric:hover span,
 .project-metric:active strong,
 .project-metric:active span {
-  color: #ffffff;
+  color: #30343b;
 }
 
 .project-detail-form {
