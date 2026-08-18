@@ -78,6 +78,9 @@ async def _migrate_add_columns() -> None:
         ("skill_change_log", "change_items", "TEXT NULL"),
         ("user_skill_deployments", "abstract_snapshot", "LONGTEXT NULL"),
         ("user_skill_deployments", "local_dirty", "TINYINT(1) NOT NULL DEFAULT 0"),
+        ("user_skill_deployments", "device_id", "VARCHAR(36) NULL"),
+        ("auth_tokens", "device_id", "VARCHAR(36) NULL"),
+        ("auth_tokens", "revoked_reason", "VARCHAR(64) NOT NULL DEFAULT ''"),
         # 团队 Skill 版本记录：资源清单列（存量表升级补列；新表由 create_all 直接含）。
         ("skill_versions", "resources_json", "TEXT NULL"),
         # 注册邀请码：记录用户注册时消费的码（invite_codes 新表由 create_all 直接建）。
@@ -112,6 +115,27 @@ async def _migrate_add_columns() -> None:
                 print(f"  [迁移] 已添加列: {table}.{column}")
 
         from sqlalchemy import text
+        index_exists = (
+            await conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM information_schema.STATISTICS "
+                    "WHERE TABLE_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = 'user_skill_deployments' "
+                    "AND INDEX_NAME = 'uq_usr_dev_proj_skill_tool_path'"
+                )
+            )
+        ).scalar()
+        if not index_exists:
+            await conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX uq_usr_dev_proj_skill_tool_path "
+                    "ON user_skill_deployments "
+                    "(user_id, device_id, project_id, team_skill_id, "
+                    "tool_type, deploy_path(191))"
+                )
+            )
+            print("  [迁移] 已添加索引: uq_usr_dev_proj_skill_tool_path")
+
         try:
             await conn.execute(text(
                 "ALTER TABLE `skill_change_log` MODIFY COLUMN `action` VARCHAR(32) NOT NULL"

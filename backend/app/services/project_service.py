@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -11,6 +12,7 @@ from sqlalchemy import case, delete, func, select
 
 from app.core.config import settings
 from app.core.database import async_session_factory
+from app.models.device import Device
 from app.models.project import Project, ProjectSkill, UserSkillDeployment
 from app.models.skill_change_log import SkillChangeLog
 from app.models.skill_package import PersonalSkill, TeamSkill
@@ -30,6 +32,7 @@ from app.services.skill_diff_service import (
 from app.services.team_sync_service import TeamSyncService
 
 logger = logging.getLogger(__name__)
+_skill_write_locks: Dict[str, asyncio.Lock] = {}
 
 SUPPORTED_TOOLS = {"cursor", "codex", "windsurf", "claude", "kiro", "trae", "qoder", "workbuddy"}
 GITIGNORE_BLOCK = [
@@ -43,6 +46,19 @@ GITIGNORE_BLOCK = [
     ".qoder/skills/",
     ".workbuddy/skills/",
 ]
+
+
+def _skill_write_lock(skill_id: str) -> asyncio.Lock:
+    return _skill_write_locks.setdefault(skill_id, asyncio.Lock())
+
+
+async def _active_device_id(session, user_id: str) -> Optional[str]:
+    return await session.scalar(
+        select(Device.id)
+        .where(Device.user_id == user_id, Device.status == "active")
+        .order_by(Device.last_seen_at.desc(), Device.updated_at.desc())
+        .limit(1)
+    )
 VIBEBARA_GUIDE_FILENAME = "vibebara.md"
 VIBEBARA_GUIDE_START = "<!-- vibebara:commands:start -->"
 VIBEBARA_GUIDE_END = "<!-- vibebara:commands:end -->"
@@ -239,6 +255,7 @@ def _deployment_to_dict(row: Optional[UserSkillDeployment]) -> Optional[Dict[str
     return {
         "id": row.id,
         "user_id": row.user_id,
+        "device_id": row.device_id,
         "project_id": row.project_id,
         "team_skill_id": row.team_skill_id,
         "skill_name": row.skill_name,
@@ -395,6 +412,9 @@ async def list_projects(team_id: str, user_id: str) -> List[Dict[str, Any]]:
     「待更新」（团队仓库有新版本可拉取）数，以及该项目「最近一次提交（推送）」时间。
     """
     async with async_session_factory() as session:
+        device_id = await _active_device_id(session, user_id)
+        if not device_id:
+            return []
         result = await session.execute(
             select(Project, func.count(ProjectSkill.id).label("cnt"))
             .outerjoin(ProjectSkill, ProjectSkill.project_id == Project.id)
@@ -421,6 +441,7 @@ async def list_projects(team_id: str, user_id: str) -> List[Dict[str, Any]]:
             )
             .where(
                 UserSkillDeployment.user_id == user_id,
+                UserSkillDeployment.device_id == device_id,
                 UserSkillDeployment.project_id.in_(project_ids),
             )
             .group_by(UserSkillDeployment.project_id)
@@ -615,14 +636,18 @@ async def list_project_skills(
 
         deployment_map: Dict[str, UserSkillDeployment] = {}
         if user_id:
+            device_id = await _active_device_id(session, user_id)
             dep_result = await session.execute(
-                select(UserSkillDeployment).where(
+                select(UserSkillDeployment)
+                .where(
                     UserSkillDeployment.project_id == project_id,
                     UserSkillDeployment.user_id == user_id,
+                    UserSkillDeployment.device_id == device_id,
                 )
+                .order_by(UserSkillDeployment.updated_at.desc())
             )
             for dep in dep_result.scalars().all():
-                deployment_map[dep.team_skill_id] = dep
+                deployment_map.setdefault(dep.team_skill_id, dep)
 
         items = []
         for ps, pkg in rows:
@@ -738,6 +763,9 @@ async def deploy_project_skill(
         snapshot_json = ""
 
     async with async_session_factory() as session:
+        device_id = await _active_device_id(session, user_id)
+        if not device_id:
+            return {"success": False, "error": "当前登录未绑定有效设备，请重新登录"}
         project = await session.get(Project, project_id)
         ref = await session.scalar(
             select(ProjectSkill).where(
@@ -748,6 +776,7 @@ async def deploy_project_skill(
         existing = await session.scalar(
             select(UserSkillDeployment).where(
                 UserSkillDeployment.user_id == user_id,
+                UserSkillDeployment.device_id == device_id,
                 UserSkillDeployment.project_id == project_id,
                 UserSkillDeployment.team_skill_id == skill_id,
                 UserSkillDeployment.tool_type == tool_type,
@@ -757,6 +786,7 @@ async def deploy_project_skill(
 
         deployment = existing or UserSkillDeployment(
             user_id=user_id,
+            device_id=device_id,
             project_id=project_id,
             team_skill_id=skill_id,
             tool_type=tool_type,
@@ -1119,22 +1149,22 @@ async def _mark_other_deployments_outdated(
     session,
     project_id: str,
     skill_id: str,
-    exclude_user_id: str,
+    exclude_deployment_id: str,
     repo_version: int,
     repo_hash: str,
 ) -> None:
     """
-    某用户推送写回团队仓库后，把同项目同 Skill 的其他用户部署实例标记为落后。
+    某设备推送写回团队仓库后，把同项目同 Skill 的其他部署实例标记为落后。
 
     - 本地有未推送改动（local_dirty）→ conflict（拉取会覆盖本地改动，需确认）
     - 否则 → outdated（可直接拉取团队最新）
-    其余用户的 repo_version/repo_hash 更新为团队最新，表示"团队已到该版本，你还没拉"。
+    其余设备/用户的 repo_version/repo_hash 更新为团队最新。
     """
     result = await session.execute(
         select(UserSkillDeployment).where(
             UserSkillDeployment.project_id == project_id,
             UserSkillDeployment.team_skill_id == skill_id,
-            UserSkillDeployment.user_id != exclude_user_id,
+            UserSkillDeployment.id != exclude_deployment_id,
             UserSkillDeployment.tracking_enabled.is_(True),
         )
     )
@@ -1408,7 +1438,7 @@ async def push_deployment(
             session=session,
             project_id=deployment.project_id,
             skill_id=skill_id,
-            exclude_user_id=user_id,
+            exclude_deployment_id=deployment.id,
             repo_version=new_version,
             repo_hash=promoted_hash,
         )
@@ -1604,6 +1634,9 @@ async def list_user_deployments(user_id: str) -> List[Dict[str, Any]]:
     输出稳定且优先展示活跃部署。
     """
     async with async_session_factory() as session:
+        device_id = await _active_device_id(session, user_id)
+        if not device_id:
+            return []
         result = await session.execute(
             select(UserSkillDeployment)
             .join(Project, Project.id == UserSkillDeployment.project_id)
@@ -1612,7 +1645,10 @@ async def list_user_deployments(user_id: str) -> List[Dict[str, Any]]:
                 (TeamMember.team_id == Project.team_id)
                 & (TeamMember.user_id == user_id),
             )
-            .where(UserSkillDeployment.user_id == user_id)
+            .where(
+                UserSkillDeployment.user_id == user_id,
+                UserSkillDeployment.device_id == device_id,
+            )
             .order_by(
                 UserSkillDeployment.updated_at.desc(),
                 UserSkillDeployment.id,
@@ -1832,6 +1868,12 @@ async def register_deployment(
     now = datetime.now(timezone.utc)
 
     async with async_session_factory() as session:
+        await session.scalar(
+            select(User).where(User.id == user_id).with_for_update()
+        )
+        device_id = await _active_device_id(session, user_id)
+        if not device_id:
+            return {"success": False, "error": "当前登录未绑定有效设备，请重新登录"}
         project = await session.get(Project, project_id)
         pkg = await session.get(TeamSkill, skill_id)
         if not project or not pkg:
@@ -1848,6 +1890,7 @@ async def register_deployment(
         existing = await session.scalar(
             select(UserSkillDeployment).where(
                 UserSkillDeployment.user_id == user_id,
+                UserSkillDeployment.device_id == device_id,
                 UserSkillDeployment.project_id == project_id,
                 UserSkillDeployment.team_skill_id == skill_id,
                 UserSkillDeployment.tool_type == tool,
@@ -1856,6 +1899,7 @@ async def register_deployment(
         )
         deployment = existing or UserSkillDeployment(
             user_id=user_id,
+            device_id=device_id,
             project_id=project_id,
             team_skill_id=skill_id,
             tool_type=tool,
@@ -1977,6 +2021,36 @@ async def push_deployment_content(
     user_id: str,
     current_hash: str,
     files: List[Dict[str, Any]],
+    expected_repo_hash: str = "",
+    create_version: bool = False,
+    version_number: str = "",
+    version_label: str = "",
+) -> Dict[str, Any]:
+    """按 Skill 串行写团队仓库，并用客户端基线 hash 做乐观锁校验。"""
+    async with async_session_factory() as session:
+        deployment = await session.get(UserSkillDeployment, deployment_id)
+        if not deployment:
+            return {"success": False, "error": "Deployment not found"}
+        skill_id = deployment.team_skill_id
+    async with _skill_write_lock(skill_id):
+        return await _push_deployment_content_unlocked(
+            deployment_id,
+            user_id,
+            current_hash,
+            files,
+            expected_repo_hash=expected_repo_hash,
+            create_version=create_version,
+            version_number=version_number,
+            version_label=version_label,
+        )
+
+
+async def _push_deployment_content_unlocked(
+    deployment_id: str,
+    user_id: str,
+    current_hash: str,
+    files: List[Dict[str, Any]],
+    expected_repo_hash: str = "",
     create_version: bool = False,
     version_number: str = "",
     version_label: str = "",
@@ -2079,7 +2153,8 @@ async def push_deployment_content(
         summary = summarize_changes(change_items)
 
         team_hash = _compute_store_hash(store_path) if store_path else ""
-        conflict = bool(repo_hash_at_deploy and repo_hash_at_deploy != team_hash)
+        expected_hash = expected_repo_hash or repo_hash_at_deploy
+        conflict = bool(expected_hash and expected_hash != team_hash)
 
         # 冲突：团队仓库在本次部署后被他人推送过，拦截本次推送
         if conflict:
@@ -2194,7 +2269,7 @@ async def push_deployment_content(
             session=session,
             project_id=deployment.project_id,
             skill_id=skill_id,
-            exclude_user_id=user_id,
+            exclude_deployment_id=deployment.id,
             repo_version=new_version,
             repo_hash=promoted_hash,
         )
@@ -2514,6 +2589,28 @@ async def merge_apply(
     merged: Dict[str, Any],
     expected_theirs_hash: str = "",
 ) -> Dict[str, Any]:
+    async with async_session_factory() as session:
+        deployment = await session.get(UserSkillDeployment, deployment_id)
+        if not deployment:
+            return {"success": False, "error": "Deployment not found"}
+        skill_id = deployment.team_skill_id
+    async with _skill_write_lock(skill_id):
+        return await _merge_apply_unlocked(
+            deployment_id,
+            user_id,
+            files,
+            merged,
+            expected_theirs_hash=expected_theirs_hash,
+        )
+
+
+async def _merge_apply_unlocked(
+    deployment_id: str,
+    user_id: str,
+    files: List[Dict[str, Any]],
+    merged: Dict[str, Any],
+    expected_theirs_hash: str = "",
+) -> Dict[str, Any]:
     """AI 合并提交（写回团队仓库）：乐观锁校验 → 补丁 mine 树 → import 写回 →
     version+1 → 返回 native 构建产物供前端覆盖落盘。"""
     async with async_session_factory() as session:
@@ -2657,7 +2754,7 @@ async def commit_merge(
             session=session,
             project_id=deployment.project_id,
             skill_id=skill_id,
-            exclude_user_id=user_id,
+            exclude_deployment_id=deployment.id,
             repo_version=deployment.repo_version,
             repo_hash=new_repo_hash,
         )

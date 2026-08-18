@@ -20,6 +20,7 @@ from app.schemas.auth import (
     CaptchaVerifyResponse,
     GenerateApiKeyResponse,
     LoginRequest,
+    LogoutResponse,
     OnboardingRequest,
     OnboardingResponse,
     ProfileUpdateRequest,
@@ -45,10 +46,10 @@ def _check_captcha(captcha_token: str) -> Optional[dict]:
     return None
 
 
-async def get_current_user_id(
+async def get_current_credential(
     authorization: Optional[str] = Header(None),
-) -> str:
-    """从 Authorization header 提取并校验凭据，返回 user_id。
+) -> auth_service.AuthCredential:
+    """从 Authorization header 提取并校验凭据及设备上下文。
 
     统一凭据路径：登录态（vhs_）与长期 API Key（vhk_）同走 verify_credential。
     """
@@ -60,10 +61,22 @@ async def get_current_user_id(
         token = token[7:]
     token = token.strip()
 
-    user_id = await auth_service.verify_credential(token)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="无效或过期的凭据")
-    return user_id
+    credential = await auth_service.verify_credential_info(token)
+    if not credential:
+        reason = await auth_service.credential_failure_reason(token)
+        detail = (
+            "账号已在另一台设备登录"
+            if reason == "signed_in_elsewhere"
+            else "无效或过期的凭据"
+        )
+        raise HTTPException(status_code=401, detail=detail)
+    return credential
+
+
+async def get_current_user_id(
+    credential: auth_service.AuthCredential = Depends(get_current_credential),
+) -> str:
+    return credential.user_id
 
 
 def _versioned_avatar_url(user) -> Optional[str]:
@@ -148,6 +161,11 @@ async def register(data: RegisterRequest):
             display_name=data.display_name,
             email=data.email,
             invite_code=data.invite_code,
+            client_uuid=data.client_uuid,
+            platform=data.platform,
+            hostname=data.hostname,
+            app_version=data.app_version,
+            agent_version=data.agent_version,
         )
         return result
     except Exception as e:
@@ -161,7 +179,15 @@ async def login(data: LoginRequest):
     if captcha_error:
         return captcha_error
     try:
-        result = await auth_service.login(data.username, data.password)
+        result = await auth_service.login(
+            data.username,
+            data.password,
+            data.client_uuid,
+            platform=data.platform,
+            hostname=data.hostname,
+            app_version=data.app_version,
+            agent_version=data.agent_version,
+        )
         return result
     except Exception as e:
         logger.exception("[auth/login] 登录失败")
@@ -169,11 +195,20 @@ async def login(data: LoginRequest):
 
 
 @api_router.get("/me", response_model=UserResponse)
-async def get_me(user_id: str = Depends(get_current_user_id)):
-    user = await auth_service.get_user_by_id(user_id)
+async def get_me(
+    credential: auth_service.AuthCredential = Depends(get_current_credential),
+):
+    user = await auth_service.get_user_by_id(credential.user_id)
     if not user:
         return {"success": False, "error": "用户不存在"}
-    return {"success": True, "user": _to_user_info(user)}
+    return {
+        "success": True,
+        "user": _to_user_info(user),
+        "credential": {
+            "kind": credential.kind,
+            "device_id": credential.device_id,
+        },
+    }
 
 
 @api_router.patch("/me", response_model=UserResponse)
@@ -266,13 +301,34 @@ async def save_onboarding(
 
 
 @api_router.post("/api-key", response_model=GenerateApiKeyResponse)
-async def generate_api_key(user_id: str = Depends(get_current_user_id)):
-    return await auth_service.generate_api_key(user_id)
+async def generate_api_key(
+    credential: auth_service.AuthCredential = Depends(get_current_credential),
+):
+    if credential.kind != "session":
+        raise HTTPException(status_code=403, detail="仅桌面登录会话可以签发 CLI Key")
+    return await auth_service.generate_api_key(
+        credential.user_id, credential.device_id
+    )
 
 
 @api_router.get("/api-key/status", response_model=ApiKeyStatusResponse)
-async def get_api_key_status(user_id: str = Depends(get_current_user_id)):
+async def get_api_key_status(
+    credential: auth_service.AuthCredential = Depends(get_current_credential),
+):
     return {
         "success": True,
-        "has_api_key": await auth_service.has_active_api_key(user_id),
+        "has_api_key": await auth_service.has_active_api_key(
+            credential.user_id, credential.device_id
+        ),
     }
+
+
+@api_router.post("/logout", response_model=LogoutResponse)
+async def logout(
+    credential: auth_service.AuthCredential = Depends(get_current_credential),
+):
+    await auth_service.revoke_credential(credential.token_id, "logout")
+    from app.websocket.hub import close_user_connections
+
+    await close_user_connections(credential.user_id, code=1000, reason="logout")
+    return {"success": True}

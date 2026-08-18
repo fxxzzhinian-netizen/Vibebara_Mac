@@ -12,6 +12,7 @@
 import { cloudClient } from './client'
 import { getClientUuid, setDeviceId } from '@/runtime/config'
 import { getDesktopBridge, isDesktop } from '@/runtime/desktopBridge'
+import { guessClientPlatform } from '@/runtime/deviceIdentity'
 
 // ===================== DTO（契约 §4.2.1，camelCase）=====================
 
@@ -55,14 +56,13 @@ export async function registerDevice(
   return data
 }
 
-/** 尽力推断本机平台（仅作展示/诊断元数据，非鉴权依赖）。 */
-function guessPlatform(): string {
-  if (typeof navigator === 'undefined') return ''
-  const ua = (navigator.userAgent || '').toLowerCase()
-  if (ua.includes('win')) return 'win32'
-  if (ua.includes('mac')) return 'darwin'
-  if (ua.includes('linux')) return 'linux'
-  return ''
+export async function acceptLoginDeviceId(deviceId: string): Promise<void> {
+  if (!deviceId) return
+  const bridge = getDesktopBridge()
+  if (bridge?.persistDeviceId) {
+    await bridge.persistDeviceId(deviceId)
+  }
+  setDeviceId(deviceId)
 }
 
 /**
@@ -80,7 +80,7 @@ export async function ensureDeviceRegistered(): Promise<string | null> {
   try {
     const res = await registerDevice({
       clientUuid,
-      platform: guessPlatform() || undefined,
+      platform: guessClientPlatform() || undefined,
     })
     if (!res.success || !res.device) {
       console.warn('[devices] 注册未成功:', res.error)
@@ -88,16 +88,11 @@ export async function ensureDeviceRegistered(): Promise<string | null> {
     }
     const deviceId = res.device.deviceId
     // 经桥回写本机 vibebara-device.json.registeredDeviceId（主进程同时热更运行时）。
-    const bridge = getDesktopBridge()
-    if (bridge?.persistDeviceId) {
-      try {
-        await bridge.persistDeviceId(deviceId)
-      } catch (e) {
-        console.warn('[devices] 回写 device_id 到桌面失败:', (e as Error)?.message)
-      }
+    try {
+      await acceptLoginDeviceId(deviceId)
+    } catch (e) {
+      console.warn('[devices] 回写 device_id 到桌面失败:', (e as Error)?.message)
     }
-    // 同步前端运行时缓存（后续上报用规范 device_id）。
-    setDeviceId(deviceId)
     return deviceId
   } catch (e) {
     console.warn('[devices] 设备注册失败（不影响登录，可后续重试）:', (e as Error)?.message)

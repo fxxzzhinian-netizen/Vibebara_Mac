@@ -104,22 +104,33 @@ def test_profile_routes_use_authentication_gate():
 
 
 def test_authentication_gate_accepts_valid_and_rejects_invalid():
-    saved = auth_service.verify_credential
+    saved = (
+        auth_service.verify_credential_info,
+        auth_service.credential_failure_reason,
+    )
 
     async def fake_verify(raw):
-        return "user-1" if raw == "good" else None
+        if raw != "good":
+            return None
+        return auth_service.AuthCredential("token-1", "user-1", "session", "device-1")
 
-    auth_service.verify_credential = fake_verify
+    async def fake_reason(_raw):
+        return ""
+
+    auth_service.verify_credential_info = fake_verify
+    auth_service.credential_failure_reason = fake_reason
     try:
-        assert asyncio.run(auth_api.get_current_user_id("Bearer good")) == "user-1"
+        credential = asyncio.run(auth_api.get_current_credential("Bearer good"))
+        assert asyncio.run(auth_api.get_current_user_id(credential)) == "user-1"
         with pytest.raises(HTTPException) as invalid:
-            asyncio.run(auth_api.get_current_user_id("Bearer bad"))
+            asyncio.run(auth_api.get_current_credential("Bearer bad"))
         assert invalid.value.status_code == 401
         with pytest.raises(HTTPException) as missing:
-            asyncio.run(auth_api.get_current_user_id(None))
+            asyncio.run(auth_api.get_current_credential(None))
         assert missing.value.status_code == 401
     finally:
-        auth_service.verify_credential = saved
+        auth_service.verify_credential_info = saved[0]
+        auth_service.credential_failure_reason = saved[1]
 
 
 def test_avatar_processing_outputs_square_webp():

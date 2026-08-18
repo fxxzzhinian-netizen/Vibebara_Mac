@@ -10,7 +10,7 @@ import {
   type LauncherLaunchRequest,
   type RuntimeConfigPayload,
 } from "../shared/types";
-import { writeCliAuthorization } from "./cliConfig";
+import { bindCliIdentity, writeCliAuthorization } from "./cliConfig";
 import * as launcher from "./launcher";
 import * as tokenStore from "./tokenStore";
 
@@ -73,6 +73,16 @@ export function registerIpc(deps: {
     (event: IpcMainInvokeEvent, request: CliAuthorizationRequest) => {
       assertTrusted(event);
       return writeCliAuthorization(request);
+    },
+  );
+  ipcMain.handle(
+    IPC.CLI_BIND_IDENTITY,
+    (
+      event: IpcMainInvokeEvent,
+      request: { userId: string; deviceId: string },
+    ) => {
+      assertTrusted(event);
+      return bindCliIdentity(request);
     },
   );
 

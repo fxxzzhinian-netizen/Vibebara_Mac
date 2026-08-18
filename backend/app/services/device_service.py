@@ -14,7 +14,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
 from app.models.device import Device
@@ -38,6 +39,65 @@ def _device_to_info(device: Device) -> Dict[str, Any]:
     }
 
 
+async def activate_device_for_login(
+    session: AsyncSession,
+    user_id: str,
+    client_uuid: str,
+    platform: Optional[str] = None,
+    hostname: Optional[str] = None,
+    app_version: Optional[str] = None,
+    agent_version: Optional[str] = None,
+) -> Device:
+    """在登录事务内激活唯一设备；调用方必须先锁定对应 User 行。"""
+    cuid = (client_uuid or "").strip()
+    if not cuid:
+        raise ValueError("缺少 clientUuid")
+
+    device = (
+        await session.execute(
+            select(Device).where(
+                Device.user_id == user_id,
+                Device.client_uuid == cuid,
+            )
+        )
+    ).scalar_one_or_none()
+    now = datetime.utcnow()
+    if device is None:
+        device = Device(user_id=user_id, client_uuid=cuid)
+        session.add(device)
+        await session.flush()
+
+    await session.execute(
+        update(Device)
+        .where(Device.user_id == user_id, Device.id != device.id)
+        .values(status="revoked", revoked_at=now)
+    )
+    device.platform = (platform or device.platform or "")[:16]
+    if hostname is not None:
+        device.hostname = hostname
+    if app_version is not None:
+        device.app_version = app_version
+    if agent_version is not None:
+        device.agent_version = agent_version
+    device.status = "active"
+    device.revoked_at = None
+    device.last_seen_at = now
+    await session.flush()
+    return device
+
+
+async def get_active_device_id(user_id: str) -> Optional[str]:
+    async with async_session_factory() as session:
+        return (
+            await session.execute(
+                select(Device.id)
+                .where(Device.user_id == user_id, Device.status == "active")
+                .order_by(Device.last_seen_at.desc(), Device.updated_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+
 async def register_device(
     user_id: str,
     client_uuid: str,
@@ -49,8 +109,8 @@ async def register_device(
     """按 (user_id, client_uuid) 幂等 upsert 设备身份；铸造/返回规范 device_id。
 
     幂等：同机同用户重复注册命中同一行、返回同一 device_id（设计 §3.1）。
-    重新注册视为「该用户重新使用此机器」→ 刷新元数据 + last_seen_at，
-    且若先前被撤销则重新激活（status=active、清 revoked_at）。
+    该端点只刷新当前 active 设备。被挤下线的设备必须重新输入密码登录，
+    不能拿旧 Bearer 自助恢复。
     """
     cuid = (client_uuid or "").strip()
     if not cuid:
@@ -66,19 +126,15 @@ async def register_device(
         now = datetime.utcnow()
 
         if device is None:
-            device = Device(
-                user_id=user_id,
-                client_uuid=cuid,
-                platform=(platform or "")[:16],
-                hostname=hostname,
-                app_version=app_version,
-                agent_version=agent_version,
-                status="active",
-                last_seen_at=now,
-            )
-            session.add(device)
+            return {"success": False, "error": "设备尚未通过登录激活", "code": "inactive"}
         else:
-            # 幂等命中：刷新元数据（仅在提供时覆盖）+ 心跳；重新激活已撤销设备。
+            if device.status != "active":
+                return {
+                    "success": False,
+                    "error": "账号已在另一台设备登录，请重新登录",
+                    "code": "signed_in_elsewhere",
+                }
+            # 幂等命中：仅刷新当前设备元数据与心跳。
             if platform is not None:
                 device.platform = platform[:16]
             if hostname is not None:
@@ -87,8 +143,6 @@ async def register_device(
                 device.app_version = app_version
             if agent_version is not None:
                 device.agent_version = agent_version
-            device.status = "active"
-            device.revoked_at = None
             device.last_seen_at = now
 
         await session.commit()

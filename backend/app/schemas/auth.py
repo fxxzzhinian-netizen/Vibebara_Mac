@@ -17,6 +17,11 @@ class RegisterRequest(BaseModel):
     invite_code: str = ""
     # 滑块验证 token（CAPTCHA_REQUIRED 开启时必填）
     captcha_token: str = ""
+    client_uuid: str = Field(min_length=1, max_length=64)
+    platform: str = Field(default="", max_length=16)
+    hostname: Optional[str] = Field(default=None, max_length=128)
+    app_version: Optional[str] = Field(default=None, max_length=32)
+    agent_version: Optional[str] = Field(default=None, max_length=32)
 
 
 class LoginRequest(BaseModel):
@@ -24,6 +29,11 @@ class LoginRequest(BaseModel):
     password: str
     # 滑块验证 token（CAPTCHA_REQUIRED 开启时必填）
     captcha_token: str = ""
+    client_uuid: str = Field(min_length=1, max_length=64)
+    platform: str = Field(default="", max_length=16)
+    hostname: Optional[str] = Field(default=None, max_length=128)
+    app_version: Optional[str] = Field(default=None, max_length=32)
+    agent_version: Optional[str] = Field(default=None, max_length=32)
 
 
 class TokenResponse(BaseModel):
@@ -31,7 +41,12 @@ class TokenResponse(BaseModel):
     token: str = ""
     user_id: str = ""
     username: str = ""
+    device_id: str = ""
     error: Optional[str] = None
+
+
+class LogoutResponse(BaseModel):
+    success: bool
 
 
 class UserInfo(BaseModel):
@@ -60,6 +75,7 @@ class UserInfo(BaseModel):
 class UserResponse(BaseModel):
     success: bool
     user: Optional[UserInfo] = None
+    credential: Optional[dict] = None
     error: Optional[str] = None
 
 

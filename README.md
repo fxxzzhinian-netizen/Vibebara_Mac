@@ -2,6 +2,8 @@
 
 Vibebara 是一个面向 Vibe Coding 工具（Cursor / Codex 等）的 **Skill 协作平台**：在平台抽象层统一管理 Skill，支持团队 / 项目维度的 Skill 关联、本地部署、改动推送与拉取更新，并通过 WebSocket 实时同步「项目动态」。
 
+面向最终用户的安装、桌面端操作、团队协作和 CLI 说明请阅读：[Vibebara 使用手册](USER_GUIDE.md)。
+
 ## 产品形态
 
 | 形态 | 状态 | 说明 |
@@ -315,6 +317,10 @@ cd ..
 1. 安装并登录 Vibebara Desktop。
 2. 在用户菜单点击「为 CLI 授权」，桌面端会写入 `%USERPROFILE%\.vibebara\config.json`。
 3. 新开 PowerShell，运行 `vibebara whoami`；随后可使用 `status`、`merge`、`push`、`pull`。
+
+账号采用单设备登录：在另一台电脑登录会立即吊销旧电脑的桌面会话及其 CLI/CI API Key。
+CLI Key 只绑定签发它的桌面设备；旧终端下次请求会提示账号已在另一台设备登录，需要在
+当前桌面重新生成 Key。项目部署路径和同步 hash 也按设备隔离，不会继承另一台电脑的绝对路径。
 
 源码开发态不会修改系统 PATH；需要从源码调用时，在 `local-core` 与 `cli` 依次构建后，
 可运行 `node cli/dist/index.js --help`，或在 `cli` 目录执行 `npm link`。

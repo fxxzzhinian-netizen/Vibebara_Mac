@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
+from app.models.device import Device
 from app.models.project import (
     Project,
     ProjectPermissionPolicy,
@@ -189,6 +190,14 @@ async def require_deployment_access(
         )
         if require_owner and deployment.user_id != user_id:
             raise ProjectAccessDeniedError("无权操作其他用户的部署")
+        active_device_id = await session.scalar(
+            select(Device.id)
+            .where(Device.user_id == user_id, Device.status == "active")
+            .order_by(Device.last_seen_at.desc(), Device.updated_at.desc())
+            .limit(1)
+        )
+        if deployment.device_id != active_device_id:
+            raise ProjectAccessDeniedError("该部署属于另一台设备，请在当前设备重新部署")
         if permission is not None:
             if permission not in PERMISSION_KEYS:
                 raise ValueError(f"unknown project permission: {permission}")

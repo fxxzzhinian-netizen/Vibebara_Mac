@@ -1,11 +1,13 @@
 import apiClient from './client'
 import { getRuntimeConfig } from '@/runtime/config'
+import { getLoginDeviceMetadata } from '@/runtime/deviceIdentity'
 
 export interface TokenResponse {
   success: boolean
   token: string
   user_id: string
   username: string
+  device_id: string
   error?: string
 }
 
@@ -50,6 +52,7 @@ export interface ApiKeyStatusResponse {
 export interface UserResponse {
   success: boolean
   user?: UserInfo
+  credential?: { kind: string; device_id: string | null }
   error?: string
 }
 
@@ -114,6 +117,7 @@ export async function register(
     captcha_token: captchaToken,
     display_name: display_name ?? '',
     email: email ?? null,
+    ...getLoginDeviceMetadata(),
   })
   return data
 }
@@ -127,12 +131,18 @@ export async function login(
     username,
     password,
     captcha_token: captchaToken,
+    ...getLoginDeviceMetadata(),
   })
   return data
 }
 
 export async function getMe(): Promise<UserResponse> {
   const { data } = await apiClient.get<UserResponse>('/auth/me')
+  return data
+}
+
+export async function logoutSession(): Promise<{ success: boolean }> {
+  const { data } = await apiClient.post<{ success: boolean }>('/auth/logout')
   return data
 }
 

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -20,7 +20,13 @@ class AuthToken(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    # session / PAT 均绑定签发它的设备；单账号单设备切换时按此列精确吊销。
+    device_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     # 'session' = 登录态（短期，有 expires_at）；'pat' = 长期无头凭据（默认无过期）
     kind: Mapped[str] = mapped_column(String(16), default="session")
@@ -34,3 +40,5 @@ class AuthToken(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # NULL = 有效；非空 = 已吊销
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 供客户端区分普通过期与“账号已在另一台设备登录”。
+    revoked_reason: Mapped[str] = mapped_column(String(64), default="")

@@ -79,8 +79,17 @@ export function useTeamSync(
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       connected.value = false
+      if (event.code === 4001) {
+        manualClose = true
+        window.dispatchEvent(
+          new CustomEvent('vibebara:unauthorized', {
+            detail: { reason: '账号已在另一台设备登录' },
+          }),
+        )
+        return
+      }
       // 非主动关闭（断线/服务端重启）且仍停留在该团队时，定时重连
       if (
         !manualClose &&

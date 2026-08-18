@@ -71,6 +71,11 @@ const router = createRouter({
       name: 'market-skill-detail',
       component: () => import('@/views/MarketSkillDetail.vue'),
     },
+    {
+      path: '/help',
+      name: 'help-center',
+      component: () => import('@/views/HelpCenter.vue'),
+    },
   ],
 })
 

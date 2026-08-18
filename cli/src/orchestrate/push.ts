@@ -29,6 +29,7 @@ export async function pushSkill(
     `/skill-deployments/${deployment.id}/push`,
     {
       currentHash: folder.dirHash,
+      expectedRepoHash: deployment.repo_hash,
       files: folder.files,
       createVersion: options.createVersion ?? false,
       versionNumber: options.versionNumber ?? "",

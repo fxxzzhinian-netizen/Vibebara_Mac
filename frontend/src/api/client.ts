@@ -104,7 +104,22 @@ function logApiError(scope: 'cloud' | 'local', error: any) {
   return Promise.reject(error)
 }
 
-cloudClient.interceptors.response.use((r) => r, (e) => logApiError('cloud', e))
+cloudClient.interceptors.response.use((r) => r, (e) => {
+  const status = e?.response?.status
+  const url = String(e?.config?.url ?? '')
+  const isLoginRequest = url.includes('/auth/login') || url.includes('/auth/register')
+  if (status === 401 && !isLoginRequest && typeof window !== 'undefined') {
+    const detail = e?.response?.data?.detail
+    window.dispatchEvent(
+      new CustomEvent('vibebara:unauthorized', {
+        detail: {
+          reason: typeof detail === 'string' ? detail : '登录状态已失效，请重新登录',
+        },
+      }),
+    )
+  }
+  return logApiError('cloud', e)
+})
 localAgentClient.interceptors.response.use((r) => r, (e) => logApiError('local', e))
 
 // 桌面形态：订阅本地代理端口漂移热更（任务②）。web 形态桥不存在 → 跳过，行为不变。

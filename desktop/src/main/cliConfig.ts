@@ -5,6 +5,8 @@ import path from "node:path";
 export interface CliAuthorizationConfig {
   apiKey: string;
   cloudApiBase: string;
+  userId: string;
+  deviceId: string;
 }
 
 export interface CliAuthorizationResult {
@@ -46,6 +48,9 @@ export function writeCliAuthorization(
   if (!apiKey.startsWith("vhk_")) {
     throw new Error("无效的 CLI API Key");
   }
+  if (!input.userId || !input.deviceId) {
+    throw new Error("CLI 授权缺少账号或设备身份");
+  }
   const cloudApiBase = validateCloudBase(input.cloudApiBase ?? "");
   const directory = configDirectory();
   const target = cliConfigPath();
@@ -54,7 +59,12 @@ export function writeCliAuthorization(
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   fs.writeFileSync(
     temporary,
-    `${JSON.stringify({ apiKey, cloudApiBase }, null, 2)}\n`,
+    `${JSON.stringify({
+      apiKey,
+      cloudApiBase,
+      userId: input.userId,
+      deviceId: input.deviceId,
+    }, null, 2)}\n`,
     { encoding: "utf8", mode: 0o600 },
   );
   fs.renameSync(temporary, target);
@@ -71,4 +81,36 @@ export function writeCliAuthorization(
     terminalRestartRequired: Boolean(cliPath),
     cliPath,
   };
+}
+
+/** 登录身份变化时立即清掉上一账号/设备遗留的 CLI PAT。 */
+export function bindCliIdentity(input: {
+  userId: string;
+  deviceId: string;
+}): { success: true; cleared: boolean } {
+  if (!input.userId || !input.deviceId) {
+    throw new Error("缺少账号或设备身份");
+  }
+  const target = cliConfigPath();
+  if (!fs.existsSync(target)) return { success: true, cleared: false };
+  let current: Record<string, unknown> = {};
+  try {
+    current = JSON.parse(fs.readFileSync(target, "utf8")) as Record<string, unknown>;
+  } catch {
+    current = {};
+  }
+  const sameIdentity =
+    current.userId === input.userId && current.deviceId === input.deviceId;
+  if (sameIdentity) return { success: true, cleared: false };
+
+  delete current.apiKey;
+  current.userId = input.userId;
+  current.deviceId = input.deviceId;
+  const temporary = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(current, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  fs.renameSync(temporary, target);
+  return { success: true, cleared: true };
 }

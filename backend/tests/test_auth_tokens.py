@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi import HTTPException  # noqa: E402
 
 import app.services.auth_service as auth_service  # noqa: E402
-from app.api.auth import get_current_user_id  # noqa: E402
+from app.api.auth import get_current_credential, get_current_user_id  # noqa: E402
 
 
 # =====================================================================
@@ -29,32 +29,40 @@ from app.api.auth import get_current_user_id  # noqa: E402
 # =====================================================================
 
 def test_gate_uses_verify_credential():
-    saved = auth_service.verify_credential
+    saved = (
+        auth_service.verify_credential_info,
+        auth_service.credential_failure_reason,
+    )
 
     async def fake_vc(raw):
-        return "user-x" if raw == "good" else None
+        if raw != "good":
+            return None
+        return auth_service.AuthCredential("token-x", "user-x", "session", "device-x")
 
-    auth_service.verify_credential = fake_vc
+    auth_service.verify_credential_info = fake_vc
+    auth_service.credential_failure_reason = lambda _raw: asyncio.sleep(0, result="")
     try:
         # 命中（带 Bearer 前缀 / 裸串均可）
-        assert asyncio.run(get_current_user_id("Bearer good")) == "user-x"
-        assert asyncio.run(get_current_user_id("good")) == "user-x"
+        credential = asyncio.run(get_current_credential("Bearer good"))
+        assert credential.user_id == "user-x"
+        assert asyncio.run(get_current_user_id(credential)) == "user-x"
 
         # 无效凭据 → 401
         try:
-            asyncio.run(get_current_user_id("Bearer bad"))
+            asyncio.run(get_current_credential("Bearer bad"))
             assert False, "无效凭据应抛 401"
         except HTTPException as e:
             assert e.status_code == 401
 
         # 缺失 Authorization → 401
         try:
-            asyncio.run(get_current_user_id(None))
+            asyncio.run(get_current_credential(None))
             assert False, "缺失凭据应抛 401"
         except HTTPException as e:
             assert e.status_code == 401
     finally:
-        auth_service.verify_credential = saved
+        auth_service.verify_credential_info = saved[0]
+        auth_service.credential_failure_reason = saved[1]
 
 
 # =====================================================================
@@ -74,23 +82,29 @@ async def _db_reachable() -> bool:
 
 
 async def _ensure_tables() -> None:
-    from app.core.database import Base, engine
+    from app.core.database import Base, _migrate_add_columns, engine
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _migrate_add_columns()
 
 
 async def _service_roundtrip() -> None:
     from sqlalchemy import delete, select
     from app.core.database import async_session_factory
     from app.models.auth_token import AuthToken
+    from app.models.device import Device
     from app.models.user import User
 
     reg = await auth_service.register(
-        f"tok-test-{uuid.uuid4().hex[:8]}", "pw", bypass_invite=True
+        f"tok-test-{uuid.uuid4().hex[:8]}",
+        "pw",
+        bypass_invite=True,
+        client_uuid=f"auth-test-{uuid.uuid4().hex}",
     )
     assert reg.get("success"), reg
     uid = reg["user_id"]
+    device_id = reg["device_id"]
 
     try:
         # register 已签发 session token？register 返回 token，校验命中
@@ -98,25 +112,25 @@ async def _service_roundtrip() -> None:
         assert await auth_service.verify_credential(reg["token"]) == uid
 
         # 显式 session 签发 → 校验命中
-        sess = await auth_service.create_session_token(uid)
+        sess = await auth_service.create_session_token(uid, device_id)
         assert sess.startswith("vhs_")
         assert await auth_service.verify_credential(sess) == uid
 
         # 尚未签发 PAT 时，CLI 状态为未生成
-        assert await auth_service.has_active_api_key(uid) is False
+        assert await auth_service.has_active_api_key(uid, device_id) is False
 
         # PAT 签发（无过期）→ 校验命中
-        pat1 = await auth_service.create_pat(uid, name="cli")
+        pat1 = await auth_service.create_pat(uid, name="cli", device_id=device_id)
         assert pat1.startswith("vhk_")
         assert await auth_service.verify_credential(pat1) == uid
-        assert await auth_service.has_active_api_key(uid) is True
+        assert await auth_service.has_active_api_key(uid, device_id) is True
 
         # 未知 / 空 → None
         assert await auth_service.verify_credential("vhk_does-not-exist") is None
         assert await auth_service.verify_credential("") is None
 
         # PAT 重签发 = 轮换旧 PAT（旧失效、新有效）
-        pat2 = await auth_service.create_pat(uid, name="cli")
+        pat2 = await auth_service.create_pat(uid, name="cli", device_id=device_id)
         assert await auth_service.verify_credential(pat1) is None
         assert await auth_service.verify_credential(pat2) == uid
 
@@ -124,6 +138,7 @@ async def _service_roundtrip() -> None:
         async with async_session_factory() as session:
             session.add(AuthToken(
                 user_id=uid,
+                device_id=device_id,
                 token_hash=auth_service._hash_token("vhs_expired-xyz"),
                 kind="session",
                 expires_at=datetime.utcnow() - timedelta(seconds=10),
@@ -135,6 +150,7 @@ async def _service_roundtrip() -> None:
         async with async_session_factory() as session:
             session.add(AuthToken(
                 user_id=uid,
+                device_id=device_id,
                 token_hash=auth_service._hash_token("vhk_revoked-xyz"),
                 kind="pat",
                 revoked_at=datetime.utcnow(),
@@ -155,6 +171,7 @@ async def _service_roundtrip() -> None:
             await session.execute(
                 delete(AuthToken).where(AuthToken.user_id == uid)
             )
+            await session.execute(delete(Device).where(Device.user_id == uid))
             await session.execute(delete(User).where(User.id == uid))
             await session.commit()
 

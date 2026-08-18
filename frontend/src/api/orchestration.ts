@@ -16,6 +16,7 @@
  */
 import { cloudClient } from './client'
 import { TOOL_TYPES } from '@/constants/platforms'
+import { getDeviceId } from '@/runtime/config'
 import * as localAgent from './localAgent'
 import type {
   ResourcePayload,
@@ -93,10 +94,62 @@ export interface CommitPullRequest {
 /** 推送（接收本地 install 内容上传，云端 diff + 写回 Store）。 */
 export interface PushDeploymentRequest {
   currentHash: string
+  expectedRepoHash: string
   files: FilePayload[]
   createVersion?: boolean
   versionNumber?: string
   versionLabel?: string
+}
+
+interface PendingDeploymentRegistration {
+  projectId: string
+  skillId: string
+  deviceId: string
+  userId: string
+  body: RegisterDeploymentRequest
+}
+
+const PENDING_REGISTRATIONS_KEY = 'vibebara_pending_deployment_registrations'
+
+function readPendingRegistrations(): PendingDeploymentRegistration[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(PENDING_REGISTRATIONS_KEY) || '[]')
+    return Array.isArray(value) ? value : []
+  } catch {
+    return []
+  }
+}
+
+function savePendingRegistration(task: PendingDeploymentRegistration): void {
+  const pending = readPendingRegistrations().filter(
+    (item) =>
+      !(
+        item.userId === task.userId &&
+        item.deviceId === task.deviceId &&
+        item.body.installPath === task.body.installPath
+      ),
+  )
+  pending.push(task)
+  localStorage.setItem(PENDING_REGISTRATIONS_KEY, JSON.stringify(pending))
+}
+
+export async function retryPendingDeploymentRegistrations(): Promise<void> {
+  const userId = localStorage.getItem('vibebara_user_id') || ''
+  const deviceId = getDeviceId() || ''
+  const keep: PendingDeploymentRegistration[] = []
+  for (const task of readPendingRegistrations()) {
+    if (task.userId !== userId || task.deviceId !== deviceId) {
+      keep.push(task)
+      continue
+    }
+    try {
+      const result = await registerDeployment(task.projectId, task.skillId, task.body)
+      if (!result.success) keep.push(task)
+    } catch {
+      keep.push(task)
+    }
+  }
+  localStorage.setItem(PENDING_REGISTRATIONS_KEY, JSON.stringify(keep))
 }
 
 /** 导入（接收本地文件夹内容上传，云端落 Store）。 */
@@ -240,6 +293,7 @@ export async function deployProjectSkillOrchestrated(
   payload: { tool_type: string; deploy_path: string; overwrite?: boolean },
 ): Promise<SkillDeploymentResponse> {
   const tool = asTool(payload.tool_type)
+  let pendingRegistration: PendingDeploymentRegistration | undefined
   try {
     // ① 云端构建产物（不写盘、不登记）
     const artifact = await buildArtifactForProjectSkill(projectId, skillId, tool)
@@ -262,7 +316,7 @@ export async function deployProjectSkillOrchestrated(
     })
 
     // ④ 云端登记部署元数据 + change log
-    return await registerDeployment(projectId, skillId, {
+    const body: RegisterDeploymentRequest = {
       tool,
       deployPath: payload.deploy_path,
       installPath: write.installPath,
@@ -271,9 +325,32 @@ export async function deployProjectSkillOrchestrated(
       repoVersion: artifact.repo_version,
       abstractSnapshot: artifact.abstract_snapshot,
       overwrite: payload.overwrite,
-    })
+    }
+    pendingRegistration = {
+      projectId,
+      skillId,
+      deviceId: getDeviceId() || '',
+      userId: localStorage.getItem('vibebara_user_id') || '',
+      body,
+    }
+    const registered = await registerDeployment(projectId, skillId, body)
+    if (!registered.success) {
+      savePendingRegistration(pendingRegistration)
+      return {
+        ...registered,
+        error: `${registered.error || '云端登记失败'}；本地文件已保留，将自动重试登记`,
+      }
+    }
+    return registered
   } catch (e) {
-    return { success: false, deployed: [], error: errMsg(e) }
+    if (pendingRegistration) savePendingRegistration(pendingRegistration)
+    return {
+      success: false,
+      deployed: [],
+      error: pendingRegistration
+        ? `${errMsg(e)}；本地文件已保留，将自动重试登记`
+        : errMsg(e),
+    }
   }
 }
 
@@ -388,6 +465,7 @@ export async function pushOrchestrated(
     // 上传云端解析 + diff + 写回 Store
     return await pushContent(deploymentId, {
       currentHash: cur.hash,
+      expectedRepoHash: deployment.repo_hash,
       files: folder.files,
       createVersion: opts?.createVersion ?? false,
       versionNumber: opts?.versionNumber ?? '',

@@ -19,6 +19,11 @@ export async function loginCommand(
   options: LoginOptions,
   output: Output,
 ): Promise<void> {
+  const credentialSource = options.apiKey
+    ? "argument"
+    : process.env["VIBEBARA_API_KEY"]
+      ? "environment"
+      : "config";
   const resolved = resolveConfig({
     apiKey: options.apiKey,
     cloudApiBase: options.cloud,
@@ -41,13 +46,21 @@ export async function loginCommand(
   if (!response.success || !response.user) {
     throw new CliError(response.error || "凭据验证失败", EXIT.AUTH);
   }
+  const stored = loadConfig();
+  if (stored.userId && stored.userId !== response.user.id) {
+    clearCredential();
+  }
   saveConfig({
     apiKey: resolved.apiKey,
     cloudApiBase: resolved.cloudApiBase,
+    userId: response.user.id,
+    deviceId: response.credential?.device_id ?? undefined,
   });
   output.data({
     success: true,
     username: response.user.username,
+    device_id: response.credential?.device_id,
+    credential_source: credentialSource,
     cloud_api_base: resolved.cloudApiBase,
   });
 }
@@ -68,6 +81,10 @@ export async function whoamiCommand(
     success: true,
     user: response.user,
     api_key: `${config.apiKey.slice(0, 8)}…`,
+    device_id: response.credential?.device_id,
+    credential_source: process.env["VIBEBARA_API_KEY"]
+      ? "environment"
+      : "config",
     cloud_api_base: config.cloudApiBase,
   });
 }

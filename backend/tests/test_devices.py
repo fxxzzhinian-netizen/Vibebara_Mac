@@ -38,10 +38,18 @@ def _build_client():
 
 
 def _install_router_stubs():
-    token_user = {"tok-a": "user-a", "tok-b": "user-b"}
+    token_user = {"tok-a": ("user-a", "dev-a"), "tok-b": ("user-b", "dev-b")}
 
     async def fake_verify(token):
-        return token_user.get(token)
+        value = token_user.get(token)
+        if not value:
+            return None
+        return auth_service.AuthCredential(
+            f"token-{value[0]}", value[0], "session", value[1]
+        )
+
+    async def fake_reason(_token):
+        return ""
 
     async def fake_register(user_id, client_uuid, platform=None, hostname=None,
                             app_version=None, agent_version=None):
@@ -74,18 +82,21 @@ def _install_router_stubs():
         return {"success": True, "device_id": device_id, "status": "revoked"}
 
     saved = {
-        "verify": auth_service.verify_credential,
+        "verify": auth_service.verify_credential_info,
+        "reason": auth_service.credential_failure_reason,
         "register": device_service.register_device,
         "revoke": device_service.revoke_device,
     }
-    auth_service.verify_credential = fake_verify
+    auth_service.verify_credential_info = fake_verify
+    auth_service.credential_failure_reason = fake_reason
     device_service.register_device = fake_register
     device_service.revoke_device = fake_revoke
     return saved
 
 
 def _restore_router_stubs(saved):
-    auth_service.verify_credential = saved["verify"]
+    auth_service.verify_credential_info = saved["verify"]
+    auth_service.credential_failure_reason = saved["reason"]
     device_service.register_device = saved["register"]
     device_service.revoke_device = saved["revoke"]
 
@@ -181,10 +192,11 @@ async def _db_reachable() -> bool:
 
 
 async def _ensure_tables() -> None:
-    from app.core.database import Base, engine
+    from app.core.database import Base, _migrate_add_columns, engine
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _migrate_add_columns()
 
 
 async def _service_idempotency_and_ownership() -> None:
@@ -197,19 +209,25 @@ async def _service_idempotency_and_ownership() -> None:
 
     # 两个临时用户
     # 本测试验证设备服务，不验证邀请码；显式使用受信任的测试注册入口。
+    client_uuid = f"cuid-{uuid.uuid4().hex}"
     u1 = await auth_service.register(
-        f"dev-test-{uuid.uuid4().hex[:8]}", "pw", bypass_invite=True
+        f"dev-test-{uuid.uuid4().hex[:8]}",
+        "pw",
+        bypass_invite=True,
+        client_uuid=client_uuid,
     )
     u2 = await auth_service.register(
-        f"dev-test-{uuid.uuid4().hex[:8]}", "pw", bypass_invite=True
+        f"dev-test-{uuid.uuid4().hex[:8]}",
+        "pw",
+        bypass_invite=True,
+        client_uuid=client_uuid,
     )
     assert u1.get("success") and u2.get("success"), (u1, u2)
     uid1, uid2 = u1["user_id"], u2["user_id"]
-    client_uuid = f"cuid-{uuid.uuid4().hex}"
 
     created_device_ids = []
     try:
-        # 铸造：首次注册 → 服务端铸造 device_id（uuid4）
+        # 登录事务已铸造设备；register 端点仅幂等刷新当前 active 设备。
         r1 = await device_service.register_device(uid1, client_uuid, platform="win32")
         assert r1["success"], r1
         did1 = r1["device"]["device_id"]
@@ -238,10 +256,10 @@ async def _service_idempotency_and_ownership() -> None:
         rev_ok = await device_service.revoke_device(uid1, did1)
         assert rev_ok["success"] and rev_ok["status"] == "revoked"
 
-        # 重新注册被撤销设备 → 重新激活（status=active）+ 同一 device_id
+        # 被撤销设备不能凭旧 token 自助恢复，必须重新输入密码登录。
         r1c = await device_service.register_device(uid1, client_uuid)
-        assert r1c["device"]["device_id"] == did1
-        assert r1c["device"]["status"] == "active", "重新注册应重新激活已撤销设备"
+        assert r1c["success"] is False
+        assert r1c["code"] == "signed_in_elsewhere"
     finally:
         # 清理
         async with async_session_factory() as session:

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Dict
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -91,12 +91,28 @@ class ProjectSkill(Base):
 
 class UserSkillDeployment(Base):
     __tablename__ = "user_skill_deployments"
+    __table_args__ = (
+        Index(
+            "uq_usr_dev_proj_skill_tool_path",
+            "user_id",
+            "device_id",
+            "project_id",
+            "team_skill_id",
+            "tool_type",
+            "deploy_path",
+            unique=True,
+            mysql_length={"deploy_path": 191},
+        ),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    device_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True
     )
     project_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("projects.id", ondelete="CASCADE"), index=True

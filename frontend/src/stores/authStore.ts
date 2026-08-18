@@ -8,10 +8,12 @@ import {
   updateProfile,
   uploadAvatar,
   deleteAvatar,
+  logoutSession,
   type UserInfo,
   type UpdateProfilePayload,
 } from '@/api/auth'
-import { ensureDeviceRegistered } from '@/api/devices'
+import { acceptLoginDeviceId } from '@/api/devices'
+import { getDesktopBridge } from '@/runtime/desktopBridge'
 import { getToken, setToken, removeToken } from '@/runtime/tokenStorage'
 import { DEV_SKIP_AUTH, DEV_FAKE_USER } from '@/runtime/devAuth'
 
@@ -23,6 +25,14 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref('')
 
   const isLoggedIn = computed(() => !!token.value && !!user.value)
+
+  async function bindDesktopCliIdentity(userId: string, deviceId: string) {
+    try {
+      await getDesktopBridge()?.cli.bindIdentity({ userId, deviceId })
+    } catch (bindError) {
+      console.warn('[auth] 清理上一账号 CLI 凭据失败:', bindError)
+    }
+  }
 
   async function doRegister(
     username: string,
@@ -44,9 +54,9 @@ export const useAuthStore = defineStore('auth', () => {
       if (res.success) {
         token.value = res.token
         setToken(res.token)
+        await acceptLoginDeviceId(res.device_id)
+        await bindDesktopCliIdentity(res.user_id, res.device_id)
         await fetchMe()
-        // M5-b：桌面形态下登录成功后注册设备身份（web 形态安全跳过）。
-        void ensureDeviceRegistered()
       } else {
         error.value = res.error || '注册失败'
       }
@@ -72,9 +82,9 @@ export const useAuthStore = defineStore('auth', () => {
       if (res.success) {
         token.value = res.token
         setToken(res.token)
+        await acceptLoginDeviceId(res.device_id)
+        await bindDesktopCliIdentity(res.user_id, res.device_id)
         await fetchMe()
-        // M5-b：桌面形态下登录成功后注册设备身份（web 形态安全跳过）。
-        void ensureDeviceRegistered()
       } else {
         error.value = res.error || '登录失败'
       }
@@ -99,10 +109,14 @@ export const useAuthStore = defineStore('auth', () => {
       const res = await getMe()
       if (res.success && res.user) {
         user.value = res.user
+        localStorage.setItem('vibebara_user_id', res.user.id)
+        void import('@/api/orchestration').then(({ retryPendingDeploymentRegistrations }) =>
+          retryPendingDeploymentRegistrations(),
+        )
       }
     } catch (e) {
       console.error('[auth] 获取当前用户失败（将清除本地登录态）GET /auth/me:', e)
-      logout()
+      forceLogout()
     }
   }
 
@@ -198,10 +212,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function logout() {
+  function forceLogout() {
     token.value = ''
     user.value = null
     removeToken()
+    localStorage.removeItem('vibebara_user_id')
+  }
+
+  async function logout() {
+    try {
+      if (token.value) await logoutSession()
+    } catch {
+      // 网络失败时仍须清理本机凭据；服务端 token 会按 TTL/设备切换失效。
+    } finally {
+      forceLogout()
+    }
   }
 
   async function init() {
@@ -212,10 +237,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
     if (token.value) {
       await fetchMe()
-      // M5-b：已登录会话恢复时也确保设备已注册（幂等，桌面形态有效）。
-      if (user.value) {
-        void ensureDeviceRegistered()
-      }
     }
   }
 
@@ -233,6 +254,7 @@ export const useAuthStore = defineStore('auth', () => {
     saveAvatar,
     removeAvatar,
     logout,
+    forceLogout,
     init,
   }
 })

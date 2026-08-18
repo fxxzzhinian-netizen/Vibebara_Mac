@@ -23,6 +23,7 @@ const CH = {
   DEVICE_PERSIST_ID: "vibebara:device-persist-id",
   LOCAL_AGENT_CHANGED: "vibebara:local-agent-changed",
   CLI_AUTHORIZE: "vibebara:cli-authorize",
+  CLI_BIND_IDENTITY: "vibebara:cli-bind-identity",
   UPDATE_GET_STATE: "vibebara:update-get-state",
   UPDATE_CHECK: "vibebara:update-check",
   UPDATE_INSTALL: "vibebara:update-install",
@@ -49,6 +50,8 @@ interface LocalAgentChangePayload {
 interface CliAuthorizationRequest {
   apiKey: string;
   cloudApiBase: string;
+  userId: string;
+  deviceId: string;
 }
 
 interface CliAuthorizationResult {
@@ -129,6 +132,14 @@ contextBridge.exposeInMainWorld("__VIBEBARA_DESKTOP__", {
         CH.CLI_AUTHORIZE,
         request,
       ) as Promise<CliAuthorizationResult>,
+    bindIdentity: (request: {
+      userId: string;
+      deviceId: string;
+    }): Promise<{ success: true; cleared: boolean }> =>
+      ipcRenderer.invoke(
+        CH.CLI_BIND_IDENTITY,
+        request,
+      ) as Promise<{ success: true; cleared: boolean }>,
   },
   launcher: {
     listTools: () => ipcRenderer.invoke(CH.LAUNCHER_LIST),

@@ -25,6 +25,12 @@ class ProjectConnectionManager:
         self, websocket: WebSocket, project_id: str, user_id: str
     ):
         await websocket.accept()
+        previous = self._connections.get(project_id, {}).get(user_id)
+        if previous is not None and previous is not websocket:
+            try:
+                await previous.close(code=4001, reason="signed in elsewhere")
+            except Exception:
+                pass
         self._connections.setdefault(project_id, {})[user_id] = websocket
 
         await self._broadcast(
@@ -40,9 +46,12 @@ class ProjectConnectionManager:
             f"[ProjectWS] 用户 {user_id} 加入项目通道 {project_id}"
         )
 
-    async def disconnect(self, project_id: str, user_id: str):
+    async def disconnect(
+        self, project_id: str, user_id: str, websocket: WebSocket | None = None
+    ):
         conns = self._connections.get(project_id, {})
-        conns.pop(user_id, None)
+        if websocket is None or conns.get(user_id) is websocket:
+            conns.pop(user_id, None)
         if not conns:
             self._connections.pop(project_id, None)
 
@@ -86,6 +95,22 @@ class ProjectConnectionManager:
     def get_online_users(self, project_id: str) -> List[str]:
         return list(self._connections.get(project_id, {}).keys())
 
+    async def close_user(
+        self,
+        user_id: str,
+        code: int = 4001,
+        reason: str = "signed in elsewhere",
+    ) -> None:
+        for project_id, conns in list(self._connections.items()):
+            ws = conns.pop(user_id, None)
+            if ws is not None:
+                try:
+                    await ws.close(code=code, reason=reason)
+                except Exception:
+                    pass
+            if not conns:
+                self._connections.pop(project_id, None)
+
 
 # ======================================================================
 # TeamConnectionManager — 团队级 WebSocket 通道（结构变更实时同步）
@@ -106,12 +131,21 @@ class TeamConnectionManager:
 
     async def connect(self, websocket: WebSocket, team_id: str, user_id: str):
         await websocket.accept()
+        previous = self._connections.get(team_id, {}).get(user_id)
+        if previous is not None and previous is not websocket:
+            try:
+                await previous.close(code=4001, reason="signed in elsewhere")
+            except Exception:
+                pass
         self._connections.setdefault(team_id, {})[user_id] = websocket
         logger.info(f"[TeamWS] 用户 {user_id} 加入团队通道 {team_id}")
 
-    async def disconnect(self, team_id: str, user_id: str):
+    async def disconnect(
+        self, team_id: str, user_id: str, websocket: WebSocket | None = None
+    ):
         conns = self._connections.get(team_id, {})
-        conns.pop(user_id, None)
+        if websocket is None or conns.get(user_id) is websocket:
+            conns.pop(user_id, None)
         if not conns:
             self._connections.pop(team_id, None)
         logger.info(f"[TeamWS] 用户 {user_id} 离开团队通道 {team_id}")
@@ -144,6 +178,31 @@ class TeamConnectionManager:
     def get_online_users(self, team_id: str) -> List[str]:
         return list(self._connections.get(team_id, {}).keys())
 
+    async def close_user(
+        self,
+        user_id: str,
+        code: int = 4001,
+        reason: str = "signed in elsewhere",
+    ) -> None:
+        for team_id, conns in list(self._connections.items()):
+            ws = conns.pop(user_id, None)
+            if ws is not None:
+                try:
+                    await ws.close(code=code, reason=reason)
+                except Exception:
+                    pass
+            if not conns:
+                self._connections.pop(team_id, None)
+
 
 project_ws_manager = ProjectConnectionManager()
 team_ws_manager = TeamConnectionManager()
+
+
+async def close_user_connections(
+    user_id: str,
+    code: int = 4001,
+    reason: str = "signed in elsewhere",
+) -> None:
+    await project_ws_manager.close_user(user_id, code=code, reason=reason)
+    await team_ws_manager.close_user(user_id, code=code, reason=reason)

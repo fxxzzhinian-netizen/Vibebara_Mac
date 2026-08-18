@@ -52,6 +52,8 @@ export interface LocalAgentChangePayload {
 export interface CliAuthorizationRequest {
   apiKey: string
   cloudApiBase: string
+  userId: string
+  deviceId: string
 }
 
 export interface CliAuthorizationResult {
@@ -109,6 +111,10 @@ export interface VibebaraDesktopBridge {
   cli: {
     /** 将当前会话铸造的 PAT 与云端地址写入用户级 CLI 配置。 */
     authorize(req: CliAuthorizationRequest): Promise<CliAuthorizationResult>
+    bindIdentity(req: {
+      userId: string
+      deviceId: string
+    }): Promise<{ success: true; cleared: boolean }>
   }
   launcher: {
     listTools(): Promise<{ tools: DesktopToolInfo[] }>

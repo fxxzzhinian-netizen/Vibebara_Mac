@@ -314,6 +314,9 @@ def test_list_user_deployments_filters_owner():
             captured["statement"] = statement
             return FakeResult()
 
+        async def scalar(self, _statement):
+            return "device-owner"
+
     saved_factory = project_service.async_session_factory
     project_service.async_session_factory = FakeSession
     try:
@@ -340,7 +343,15 @@ def _install_router_stubs():
     token_user = {"tok-member": "u-member", "tok-other": "u-other"}
 
     async def fake_verify(token):
-        return token_user.get(token)
+        user_id = token_user.get(token)
+        if not user_id:
+            return None
+        return auth_service.AuthCredential(
+            f"token-{user_id}", user_id, "session", f"device-{user_id}"
+        )
+
+    async def fake_reason(_token):
+        return ""
 
     async def fake_get_team_id(project_id):
         return "team-1"
@@ -398,7 +409,8 @@ def _install_router_stubs():
         ]
 
     saved = {
-        "verify": auth_service.verify_credential,
+        "verify": auth_service.verify_credential_info,
+        "reason": auth_service.credential_failure_reason,
         "team_id": project_service.get_project_team_id,
         "is_member": team_service.is_team_member,
         "require_project_permission": (
@@ -408,7 +420,8 @@ def _install_router_stubs():
         "register": project_service.register_deployment,
         "list_user_deployments": project_service.list_user_deployments,
     }
-    auth_service.verify_credential = fake_verify
+    auth_service.verify_credential_info = fake_verify
+    auth_service.credential_failure_reason = fake_reason
     project_service.get_project_team_id = fake_get_team_id
     team_service.is_team_member = fake_is_member
     project_permission_service.require_project_permission = (
@@ -421,7 +434,8 @@ def _install_router_stubs():
 
 
 def _restore_router_stubs(saved):
-    auth_service.verify_credential = saved["verify"]
+    auth_service.verify_credential_info = saved["verify"]
+    auth_service.credential_failure_reason = saved["reason"]
     project_service.get_project_team_id = saved["team_id"]
     team_service.is_team_member = saved["is_member"]
     project_permission_service.require_project_permission = saved[
@@ -513,7 +527,15 @@ def test_store_build_artifact_route():
     token_user = {"tok-a": "u-a"}
 
     async def fake_verify(token):
-        return token_user.get(token)
+        user_id = token_user.get(token)
+        if not user_id:
+            return None
+        return auth_service.AuthCredential(
+            f"token-{user_id}", user_id, "session", f"device-{user_id}"
+        )
+
+    async def fake_reason(_token):
+        return ""
 
     async def fake_assert_ok(skill_id, user_id):
         return None  # 有权
@@ -533,10 +555,12 @@ def test_store_build_artifact_route():
             "abstract_snapshot": {},
         }
 
-    saved_verify = auth_service.verify_credential
+    saved_verify = auth_service.verify_credential_info
+    saved_reason = auth_service.credential_failure_reason
     saved_assert = ss._assert_skill_accessible
     saved_build = ss.project_service.build_store_skill_artifact
-    auth_service.verify_credential = fake_verify
+    auth_service.verify_credential_info = fake_verify
+    auth_service.credential_failure_reason = fake_reason
     ss.project_service.build_store_skill_artifact = lambda sid, uid, tool: fake_build(sid, uid, tool)
     path = "/api/v1/skill-forge/store/my-skill/build-artifact"
     try:
@@ -559,7 +583,8 @@ def test_store_build_artifact_route():
         assert body["skill_id"] == "my-skill"
         assert body["repo_hash"] == "h"
     finally:
-        auth_service.verify_credential = saved_verify
+        auth_service.verify_credential_info = saved_verify
+        auth_service.credential_failure_reason = saved_reason
         ss._assert_skill_accessible = saved_assert
         ss.project_service.build_store_skill_artifact = saved_build
 

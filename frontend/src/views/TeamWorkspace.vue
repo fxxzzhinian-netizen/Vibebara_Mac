@@ -578,39 +578,67 @@ watch(
                 placeholder="团队名称"
                 @keyup.enter="saveProfile"
               />
-              <template v-if="!editingProfile">
-                <button
-                  v-if="canManageProjects"
-                  class="btn-icon-edit"
-                  title="编辑团队名称与描述"
-                  @click="startEditProfile"
-                >
-                  <svg viewBox="0 0 1024 1024" width="18" height="18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M469.333333 128a42.666667 42.666667 0 0 1 0 85.333333H213.333333v597.333334h597.333334v-256l0.298666-4.992A42.666667 42.666667 0 0 1 896 554.666667v256a85.333333 85.333333 0 0 1-85.333333 85.333333H213.333333a85.333333 85.333333 0 0 1-85.333333-85.333333V213.333333a85.333333 85.333333 0 0 1 85.333333-85.333333z m414.72 12.501333a42.666667 42.666667 0 0 1 0 60.330667L491.861333 593.066667a42.666667 42.666667 0 0 1-60.330666-60.330667l392.192-392.192a42.666667 42.666667 0 0 1 60.330666 0z" fill="currentColor"></path>
-                  </svg>
-                </button>
-              </template>
-              <template v-else>
-                <button class="btn-text save" :disabled="profileSaving" @click="saveProfile">
-                  {{ profileSaving ? '保存中…' : '保存' }}
-                </button>
+              <template v-if="editingProfile">
                 <button class="btn-text" :disabled="profileSaving" @click="cancelEditProfile">取消</button>
               </template>
             </div>
-            <div v-if="isOwner" class="toolbar-actions">
+            <div
+              v-if="canManageProjects"
+              class="toolbar-actions team-action-menu"
+              :class="{ 'owner-actions': isOwner }"
+              aria-label="团队操作"
+            >
               <button
-                class="btn-add btn-add-assign"
-                title="给成员分配管理员 / 成员权限"
-                @click="showAssignRole = true"
+                class="team-action-btn save"
+                :disabled="!editingProfile || profileSaving"
+                :title="
+                  !editingProfile
+                    ? '请先编辑团队信息'
+                    : profileSaving
+                      ? '保存中…'
+                      : '保存团队信息'
+                "
+                :aria-label="profileSaving ? '保存中' : '保存团队信息'"
+                @click="saveProfile"
               >
-                分配权限
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M518.528 709.973333l121.258667-122.453333a32 32 0 0 0-0.426667-45.226667 31.146667 31.146667 0 0 0-44.373333 0l-67.157334 68.266667V404.906667a31.445333 31.445333 0 1 0-62.933333 0v205.653333l-67.157333-68.266667a31.146667 31.146667 0 0 0-44.373334 0 32.426667 32.426667 0 0 0 0 45.226667l120.832 122.453333a32.768 32.768 0 0 0 22.4 9.386667 32.725333 32.725333 0 0 0 21.973334-9.386667z m306.133333-324.864c9.941333-0.128 20.736-0.256 30.592-0.256 10.965333 0 19.413333 8.533333 19.413334 19.2v343.04c0 105.813333-85.333333 191.573333-190.08 191.573334H348.714667C238.506667 938.666667 149.333333 848.64 149.333333 737.706667V277.76C149.333333 171.946667 234.24 85.333333 339.84 85.333333h225.578667c10.581333 0 19.456 8.96 19.456 19.626667v137.386667c0 78.08 63.36 142.08 141.098666 142.506666 17.834667 0 33.834667 0.128 47.786667 0.256 10.794667 0.085333 20.352 0.170667 28.672 0.170667 5.973333 0 13.824-0.085333 22.229333-0.170667z m11.818667-62.293333c-34.688 0.128-75.648 0-105.088-0.298667-46.72 0-85.205333-38.826667-85.205333-86.058666V123.989333c0-18.346667 22.101333-27.52 34.688-14.250666l124.416 130.645333 45.696 48a20.352 20.352 0 0 1-14.506667 34.432z" fill="currentColor"></path>
+                </svg>
               </button>
               <button
-                class="btn-add btn-add-danger"
+                v-if="isOwner"
+                class="team-action-btn assign"
+                title="给成员分配管理员 / 成员权限"
+                aria-label="分配权限"
+                @click="showAssignRole = true"
+              >
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M85.333333 472.704c2.133333 99.712 8.106667 270.378667 8.96 289.152 3.029333 40.234667 18.432 80.896 42.410667 109.568 33.365333 40.277333 74.453333 58.197333 131.754667 58.197333 79.189333 0.426667 166.485333 0.426667 251.306666 0.426667 85.077333 0 167.68 0 237.44-0.426667 56.490667 0 98.858667-18.389333 131.84-58.197333 23.936-28.629333 39.338667-69.717333 41.514667-109.525333 0.853333-15.872 5.12-201.045333 7.68-289.194667H85.333333z" fill="currentColor" opacity=".4"></path>
+                  <path d="M479.786667 656.384v55.210667a32 32 0 0 0 64 0v-55.210667a32 32 0 0 0-64 0z" fill="currentColor"></path>
+                  <path d="M435.669333 621.056a32 32 0 0 1-35.285333 23.253333c-108.8-15.189333-212.864-53.76-300.672-111.786666A31.872 31.872 0 0 1 85.333333 505.813333V357.973333c0-89.6 73.045333-162.474667 162.858667-162.474666h83.925333a125.994667 125.994667 0 0 1 124.586667-110.08h110.165333a125.994667 125.994667 0 0 1 124.586667 110.08h84.352A162.645333 162.645333 0 0 1 938.24 357.973333v147.882667a32.128 32.128 0 0 1-14.336 26.709333c-87.978667 58.24-192.426667 97.024-301.994667 112.213334a32 32 0 0 1-35.413333-23.808 77.013333 77.013333 0 0 0-74.922667-57.770667c-35.925333 0-66.432 23.253333-75.904 57.898667zM566.869333 149.333333h-110.165333c-28.714667 0-52.693333 19.626667-59.861333 46.122667h229.845333a62.122667 62.122667 0 0 0-59.818667-46.08z" fill="currentColor"></path>
+                </svg>
+              </button>
+              <button
+                v-if="isOwner"
+                class="team-action-btn danger"
                 title="解散团队（不可恢复）"
+                aria-label="解散团队"
                 @click="askRemoveTeam"
               >
-                解散团队
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M865.578667 223.701333c16.64 0 30.421333 13.781333 30.421333 31.317334v16.213333a31.146667 31.146667 0 0 1-30.421333 31.317333H158.464A31.146667 31.146667 0 0 1 128 271.232v-16.213333c0-17.536 13.824-31.317333 30.464-31.317334H282.88c25.258667 0 47.232-17.962667 52.906667-43.306666l6.528-29.098667C352.469333 111.658667 385.749333 85.333333 423.893333 85.333333h176.213334c37.717333 0 71.424 26.325333 81.152 63.872l6.954666 31.146667a54.613333 54.613333 0 0 0 52.949334 43.349333h124.416z m-63.189334 592.682667c12.970667-121.045333 35.712-408.618667 35.712-411.52a31.829333 31.829333 0 0 0-7.68-23.808 30.976 30.976 0 0 0-22.357333-9.984H216.32c-8.533333 0-16.682667 3.712-22.357333 9.984a33.706667 33.706667 0 0 0-8.106667 23.808l2.261333 27.605333c6.058667 75.221333 22.912 284.757333 33.834667 383.914667 7.68 73.045333 55.637333 118.954667 125.056 120.618667 53.589333 1.237333 108.8 1.664 165.205333 1.664 53.162667 0 107.093333-0.426667 162.346667-1.664 71.850667-1.237333 119.722667-46.336 127.872-120.618667z" fill="currentColor"></path>
+                </svg>
+              </button>
+              <button
+                class="team-action-btn edit"
+                :disabled="editingProfile"
+                :title="editingProfile ? '正在编辑团队信息' : '编辑团队名称与描述'"
+                aria-label="编辑团队名称与描述"
+                @click="startEditProfile"
+              >
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M400.042667 854.528l374.912-484.821333c20.352-26.112 27.605333-56.32 20.821333-87.125334-5.888-27.989333-23.082667-54.613333-48.896-74.752L683.946667 157.824c-54.784-43.562667-122.709333-38.997333-161.664 11.008l-42.069334 54.613333a16.128 16.128 0 0 0 2.688 22.442667l108.672 87.125333c7.253333 6.912 12.672 16.085333 14.08 27.093334a40.32 40.32 0 0 1-34.901333 44.458666 36.096 36.096 0 0 1-27.605333-7.765333l-111.829334-89.002667a13.354667 13.354667 0 0 0-18.133333 2.304L147.413333 654.08c-17.194667 21.546667-23.082667 49.536-17.194666 76.586667l33.962666 147.242666a17.066667 17.066667 0 0 0 16.725334 13.312l149.418666-1.834666a89.770667 89.770667 0 0 0 69.717334-34.858667z m209.237333-45.866667h243.626667c23.765333 0 43.093333 19.626667 43.093333 43.690667 0 24.106667-19.328 43.648-43.093333 43.648h-243.626667c-23.765333 0-43.093333-19.541333-43.093333-43.648s19.328-43.690667 43.093333-43.690667z" fill="currentColor"></path>
+                </svg>
               </button>
             </div>
           </div>
@@ -880,24 +908,6 @@ watch(
 .btn-add:active { transform: scale(0.98); }
 .btn-add .plus { font-size: 1.05rem; line-height: 1; }
 
-/* 团队名称行内编辑：图标按钮（无边框，仅悬停淡底） */
-.btn-icon-edit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #9ca3af;
-  cursor: pointer;
-  transform: translateY(2px);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.btn-icon-edit:hover { background: rgba(21, 23, 23, 0.06); color: #151717; }
-
 /* 编辑态操作：纯文字按钮，不加外框 */
 .btn-text {
   padding: 0.2rem 0.4rem;
@@ -932,29 +942,171 @@ watch(
 }
 .repo-title-edit:focus { border-bottom-color: #151717; }
 
-/* 团队管理 */
-.btn-add-danger {
-  background: #dc2626;
-  color: #ffffff;
-  border: 1px solid #dc2626;
-}
-.btn-add-danger:hover { background: #b91c1c; border-color: #b91c1c; }
-
-/* 工具栏右侧多操作按钮组（分配权限 + 解散团队） */
+/* 团队管理操作：与项目操作一致的浅灰图标菜单。 */
 .toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   flex-shrink: 0;
 }
 
-/* 分配权限：团队紫纯色按钮（遵循 solid-color-buttons 规范，边框与底色同色） */
-.btn-add-assign {
-  background: #4f46e5;
-  color: #ffffff;
-  border: 1px solid #4f46e5;
+.team-action-menu {
+  --base-menu-width: 156px;
+  width: var(--base-menu-width);
+  height: 58px;
+  padding: 4px 8px;
+  gap: 0;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: #f1f3f5;
+  transition: width 0.2s ease-in;
 }
-.btn-add-assign:hover { background: #4338ca; border-color: #4338ca; }
+
+.team-action-menu.owner-actions {
+  --base-menu-width: 296px;
+}
+
+.team-action-menu:has(.team-action-btn.assign:hover),
+.team-action-menu:has(.team-action-btn.assign:focus-visible) {
+  width: calc(var(--base-menu-width) + 62px);
+}
+
+.team-action-menu:has(.team-action-btn.danger:hover),
+.team-action-menu:has(.team-action-btn.danger:focus-visible) {
+  width: calc(var(--base-menu-width) + 62px);
+}
+
+.team-action-menu:has(.team-action-btn.edit:hover),
+.team-action-menu:has(.team-action-btn.edit:focus-visible) {
+  width: calc(var(--base-menu-width) + 32px);
+}
+
+.team-action-menu:has(.team-action-btn.save:hover),
+.team-action-menu:has(.team-action-btn.save:focus-visible) {
+  width: calc(var(--base-menu-width) + 32px);
+}
+
+.team-action-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 70px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: width 0.2s ease-in, background-color 0.2s ease-in, color 0.2s ease-in;
+}
+
+.team-action-btn.assign:hover,
+.team-action-btn.assign:focus-visible {
+  width: 132px;
+  background: #e8e7ff;
+}
+
+.team-action-btn.danger:hover,
+.team-action-btn.danger:focus-visible {
+  width: 132px;
+  background: #fee2e2;
+}
+
+.team-action-btn.edit:hover,
+.team-action-btn.edit:focus-visible,
+.team-action-btn.save:hover,
+.team-action-btn.save:focus-visible {
+  width: 102px;
+}
+
+.team-action-btn.edit:hover,
+.team-action-btn.edit:focus-visible {
+  background: #e2e5e9;
+}
+
+.team-action-btn.save:hover,
+.team-action-btn.save:focus-visible {
+  background: #dbeefe;
+}
+
+.team-action-btn:focus-visible {
+  outline: 2px solid #151717;
+  outline-offset: 2px;
+}
+
+.team-action-btn::before {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  left: 48px;
+  color: currentColor;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(100%, -50%);
+  transition: transform 0.2s ease-in, opacity 0.2s ease-in;
+}
+
+.team-action-btn.assign::before {
+  content: '分配权限';
+}
+
+.team-action-btn.danger::before {
+  content: '解散团队';
+}
+
+.team-action-btn.edit::before {
+  content: '编辑';
+  letter-spacing: 0.18em;
+}
+
+.team-action-btn.save::before {
+  content: '保存';
+  letter-spacing: 0.18em;
+}
+
+.team-action-btn:hover::before,
+.team-action-btn:focus-visible::before {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.team-action-btn svg {
+  position: absolute;
+  left: 21px;
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex-shrink: 0;
+}
+
+.team-action-btn.assign {
+  color: #4f46e5;
+}
+
+.team-action-btn.danger {
+  color: #dc2626;
+}
+
+.team-action-btn.edit {
+  color: #151717;
+}
+
+.team-action-btn.save {
+  color: #0284c7;
+}
+
+.team-action-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
 
 .manage-error {
   margin-bottom: 16px;

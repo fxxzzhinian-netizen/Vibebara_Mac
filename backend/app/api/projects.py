@@ -476,6 +476,7 @@ async def push_deployment(
             deployment_id,
             user_id,
             current_hash=data.current_hash,
+            expected_repo_hash=data.expected_repo_hash,
             files=[f.model_dump() for f in data.files],
             create_version=create_version or data.create_version,
             version_number=version_number or data.version_number,

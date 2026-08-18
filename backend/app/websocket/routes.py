@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from app.services import project_service, team_service
@@ -45,9 +47,16 @@ async def project_websocket_endpoint(
 
     try:
         while True:
-            await websocket.receive_text()
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=15)
+            except asyncio.TimeoutError:
+                if await verify_credential(token) != token_user_id:
+                    await websocket.close(code=4001, reason="signed in elsewhere")
+                    break
     except WebSocketDisconnect:
-        await project_ws_manager.disconnect(project_id, token_user_id)
+        pass
+    finally:
+        await project_ws_manager.disconnect(project_id, token_user_id, websocket)
         if not project_ws_manager.get_online_users(project_id):
             SkillSyncService.unsubscribe(
                 project_id, project_ws_manager.on_skill_event
@@ -87,9 +96,16 @@ async def team_websocket_endpoint(
 
     try:
         while True:
-            await websocket.receive_text()
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=15)
+            except asyncio.TimeoutError:
+                if await verify_credential(token) != token_user_id:
+                    await websocket.close(code=4001, reason="signed in elsewhere")
+                    break
     except WebSocketDisconnect:
-        await team_ws_manager.disconnect(team_id, token_user_id)
+        pass
+    finally:
+        await team_ws_manager.disconnect(team_id, token_user_id, websocket)
         if not team_ws_manager.get_online_users(team_id):
             TeamSyncService.unsubscribe(
                 team_id, team_ws_manager.on_team_event

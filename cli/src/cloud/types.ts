@@ -8,12 +8,14 @@ export interface UserInfo {
 export interface UserResponse {
   success: boolean;
   user?: UserInfo;
+  credential?: { kind: string; device_id: string | null };
   error?: string;
 }
 
 export interface UserSkillDeploymentInfo {
   id: string;
   user_id: string;
+  device_id?: string | null;
   project_id: string;
   team_skill_id: string;
   skill_name: string;

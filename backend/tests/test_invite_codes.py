@@ -54,10 +54,15 @@ def test_batch_generation_unique():
 
 
 def test_register_request_has_invite_code():
-    req = RegisterRequest(username="u", password="p", invite_code="VH-8K2M-9DQ4")
+    req = RegisterRequest(
+        username="u",
+        password="p",
+        invite_code="VH-8K2M-9DQ4",
+        client_uuid="test-device",
+    )
     assert req.invite_code == "VH-8K2M-9DQ4"
     # 缺省为空串：老客户端不传也能反序列化（由服务端逻辑判定是否放行）
-    legacy = RegisterRequest(username="u", password="p")
+    legacy = RegisterRequest(username="u", password="p", client_uuid="test-device")
     assert legacy.invite_code == ""
 
 

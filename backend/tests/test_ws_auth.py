@@ -52,7 +52,7 @@ class _ProjMgr:
     async def connect(self, ws, project_id, user_id):
         self.connected.append((project_id, user_id))
 
-    async def disconnect(self, project_id, user_id):
+    async def disconnect(self, project_id, user_id, _websocket=None):
         self.disconnected.append((project_id, user_id))
 
     def get_online_users(self, project_id):

@@ -6,6 +6,8 @@ import { CliError, EXIT } from "./errors.js";
 export interface CliConfig {
   apiKey?: string;
   cloudApiBase?: string;
+  userId?: string;
+  deviceId?: string;
 }
 
 export interface ConfigOverrides {
@@ -42,6 +44,8 @@ export function loadConfig(): CliConfig {
         typeof value.cloudApiBase === "string"
           ? value.cloudApiBase
           : undefined,
+      userId: typeof value.userId === "string" ? value.userId : undefined,
+      deviceId: typeof value.deviceId === "string" ? value.deviceId : undefined,
     };
   } catch (error) {
     throw new CliError(
@@ -102,7 +106,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): CliConfig {
 
 export function requireCloudConfig(
   overrides: ConfigOverrides = {},
-): Required<CliConfig> {
+): CliConfig & Required<Pick<CliConfig, "apiKey" | "cloudApiBase">> {
   const resolved = resolveConfig(overrides);
   if (!resolved.cloudApiBase) {
     throw new CliError(

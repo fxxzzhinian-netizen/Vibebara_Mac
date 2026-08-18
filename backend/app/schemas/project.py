@@ -51,6 +51,7 @@ class ProjectUpdateRequest(BaseModel):
 class UserSkillDeploymentInfo(BaseModel):
     id: str
     user_id: str
+    device_id: Optional[str] = None
     project_id: str
     team_skill_id: str
     skill_name: str
@@ -324,6 +325,7 @@ class PushContentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     current_hash: str = Field(default="", alias="currentHash")
+    expected_repo_hash: str = Field(default="", alias="expectedRepoHash")
     files: List[FilePayloadIn] = []
     # 推送成功后是否创建一个新的版本快照（用户在"是否更新版本号"弹窗中选择）。
     create_version: bool = Field(default=False, alias="createVersion")

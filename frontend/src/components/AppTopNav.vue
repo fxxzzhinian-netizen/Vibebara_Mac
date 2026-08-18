@@ -12,7 +12,7 @@ import BaseModal from '@/components/BaseModal.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import ProfileDrawer from '@/views/Profile.vue'
 import { getDesktopBridge, isDesktop } from '@/runtime/desktopBridge'
-import { getRuntimeConfig } from '@/runtime/config'
+import { getDeviceId, getRuntimeConfig } from '@/runtime/config'
 import logoUrl from '@/img/logo.png'
 import logoIconUrl from '@/img/logo_icon.png'
 
@@ -74,6 +74,8 @@ const navLinks = computed<NavLink[]>(() => {
 // 选中态白色滑块：测量当前 .active 分选项的位置/宽度，滑块平滑滑动过去。
 // 触发源：路由变化（点选切页）与空间切换（个人/团队的分选项集合不同）。
 const navLinksRef = ref<HTMLElement | null>(null)
+const navHoverStyle = ref<Record<string, string>>({})
+const navHoverVisible = ref(false)
 const { style: navSliderStyle, ready: navSliderReady } = useSlideIndicator({
   container: navLinksRef,
   activeSelector: '.nav-item.active',
@@ -83,6 +85,21 @@ const { style: navSliderStyle, ready: navSliderReady } = useSlideIndicator({
   // 从上一处平滑滑到当前项（如点击「SKILL 市场」）。
   memoryKey: 'top-nav',
 })
+
+function showNavHover(event: MouseEvent, link: NavLink) {
+  if (link.reserved) return
+  const target = event.currentTarget as HTMLElement | null
+  if (!target || !navLinksRef.value) return
+  navHoverStyle.value = {
+    width: `${target.offsetWidth}px`,
+    transform: `translateX(${target.offsetLeft}px)`,
+  }
+  navHoverVisible.value = true
+}
+
+function hideNavHover() {
+  navHoverVisible.value = false
+}
 
 function isLinkActive(link: NavLink) {
   if (link.reserved || !link.to) return false
@@ -206,6 +223,11 @@ function goProfile() {
   profileDrawerOpen.value = true
 }
 
+function goHelp() {
+  closeUserMenu()
+  router.push('/help')
+}
+
 async function openProfileAvatar() {
   closeUserMenu()
   profileDrawerOpen.value = true
@@ -213,10 +235,10 @@ async function openProfileAvatar() {
   profileDrawerRef.value?.openAvatarDialog()
 }
 
-function logout() {
+async function logout() {
   closeUserMenu()
-  authStore.logout()
-  router.push('/login')
+  await authStore.logout()
+  await router.push('/login')
 }
 
 async function checkDesktopUpdate() {
@@ -283,6 +305,8 @@ async function authorizeCli() {
         const result = await bridge.cli.authorize({
           apiKey: issued.api_key,
           cloudApiBase,
+          userId: authStore.user?.id || '',
+          deviceId: getDeviceId() || '',
         })
         closeUserMenu()
         if (result.cliBundled) {
@@ -364,7 +388,12 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 中：分选栏（居中于视口中心线） -->
-      <nav ref="navLinksRef" class="nav-links">
+      <nav ref="navLinksRef" class="nav-links" @mouseleave="hideNavHover">
+        <span
+          class="nav-hover-slider"
+          :class="{ visible: navHoverVisible }"
+          :style="navHoverStyle"
+        ></span>
         <span class="nav-slider" :class="{ ready: navSliderReady }" :style="navSliderStyle"></span>
         <button
           v-for="link in navLinks"
@@ -372,6 +401,7 @@ onBeforeUnmount(() => {
           :class="['nav-item', { active: isLinkActive(link), disabled: link.reserved }]"
           :aria-disabled="link.reserved || undefined"
           @click="goNav(link)"
+          @mouseenter="showNavHover($event, link)"
         >
           <span class="nav-item-label">{{ link.label }}</span>
         </button>
@@ -605,6 +635,15 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="account-menu-divider" role="separator"></div>
+            <button type="button" class="dropdown-item usage-help" @click="goHelp">
+              <span class="item-label">使用帮助</span>
+              <svg class="usage-help-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 4.75A2.75 2.75 0 0 1 7.75 2H20v16H7.75A2.75 2.75 0 0 0 5 20.75v-16Z" />
+                <path d="M5 20.75A2.75 2.75 0 0 1 7.75 18H20v4H7.75A2.75 2.75 0 0 1 5 19.25V4.75" />
+                <path d="M9 6.5h7M9 10h7" />
+              </svg>
+            </button>
+            <div class="account-menu-divider" role="separator"></div>
             <button
               v-if="showDesktopUpdateAction"
               type="button"
@@ -767,6 +806,37 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
 }
 
+.nav-hover-slider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  border-radius: 999px;
+  background: #e3e5e8;
+  box-shadow: 0 1px 3px rgba(21, 23, 23, 0.1);
+  opacity: 0;
+  z-index: 0;
+  pointer-events: none;
+  will-change: transform, width;
+  transition:
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.15s ease;
+}
+
+.nav-hover-slider::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 2px solid rgba(255, 255, 255, 0.94);
+  border-radius: inherit;
+}
+
+.nav-hover-slider.visible {
+  opacity: 1;
+}
+
 /* 选中态黑色胶囊滑块：绝对定位于分选项之下，随选中项平滑滑动 + 变宽。 */
 .nav-slider {
   position: absolute;
@@ -824,7 +894,6 @@ onBeforeUnmount(() => {
 
 .nav-item:hover:not(.disabled):not(.active) {
   color: #202124;
-  background: rgba(21, 23, 23, 0.05);
 }
 
 /* 选中项：白色加粗文字；黑色胶囊底由 .nav-slider 提供（可滑动） */
@@ -1106,6 +1175,7 @@ onBeforeUnmount(() => {
 }
 
 .user-dropdown {
+  right: 10px;
   width: min(330px, calc(100vw - 24px));
   background: #eef3fb;
   /* 覆盖 .dropdown 的 overflow: hidden，否则向左飞出的二级面板会被裁切 */
@@ -1297,9 +1367,23 @@ onBeforeUnmount(() => {
 
 .user-dropdown > .submenu-wrap > .space-trigger,
 .user-dropdown > .cli-auth-row > .cli-auth,
+.user-dropdown > .usage-help,
 .user-dropdown > .desktop-update,
 .user-dropdown > .logout {
   font-weight: 500;
+}
+
+.usage-help-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-right: 3px;
+  color: #687386;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .desktop-update-icon {

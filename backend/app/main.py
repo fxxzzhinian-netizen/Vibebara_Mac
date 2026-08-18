@@ -207,6 +207,7 @@ async def _seed_default_users():
             password=u["password"],
             display_name=u["display_name"],
             bypass_invite=True,
+            issue_session=False,
         )
         if result.get("success"):
             print(f"  [启动] 创建用户: {u['username']}")

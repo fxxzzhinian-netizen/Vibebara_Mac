@@ -44,6 +44,8 @@ export interface LocalAgentChangePayload {
 export interface CliAuthorizationRequest {
   apiKey: string;
   cloudApiBase: string;
+  userId: string;
+  deviceId: string;
 }
 
 export interface CliAuthorizationResult {
@@ -98,6 +100,8 @@ export const IPC = {
   LOCAL_AGENT_CHANGED: "vibebara:local-agent-changed",
   /** 将已认证会话铸造的 PAT 写入 CLI 配置文件。 */
   CLI_AUTHORIZE: "vibebara:cli-authorize",
+  /** 登录身份变化时清除上一账号/设备的 CLI PAT。 */
+  CLI_BIND_IDENTITY: "vibebara:cli-bind-identity",
   /** 获取当前桌面更新状态快照。 */
   UPDATE_GET_STATE: "vibebara:update-get-state",
   /** 立即检查更新（后台自动检查之外的手动入口）。 */
