@@ -25,11 +25,20 @@ variables:
 backend:
   stage: test
   image: python:3.12
+  services:
+    - name: mysql:8.0
+      alias: mysql
   variables:
     PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
     DEPLOYMENT_MODE: cloud
     SEED_USERS_ENABLED: "false"
     DB_ECHO: "false"
+    DB_AUTO_CREATE: "true"
+    MYSQL_DATABASE: cowork_test
+    MYSQL_USER: cowork
+    MYSQL_PASSWORD: coworkpass
+    MYSQL_ROOT_PASSWORD: rootpass
+    DATABASE_URL: "mysql+aiomysql://cowork:coworkpass@mysql:3306/cowork_test?charset=utf8mb4"
   cache:
     key:
       files:
@@ -40,6 +49,27 @@ backend:
   before_script:
     - cd backend
     - python -m pip install -r requirements.txt pytest
+    - |
+      python - <<'PY'
+      import asyncio
+      from sqlalchemy import text
+      from app.core.database import engine
+
+      async def wait_for_mysql():
+          last_error = None
+          for _ in range(60):
+              try:
+                  async with engine.connect() as connection:
+                      await connection.execute(text("SELECT 1"))
+                  await engine.dispose()
+                  return
+              except Exception as error:
+                  last_error = error
+                  await asyncio.sleep(1)
+          raise RuntimeError(f"MySQL did not become ready: {last_error}")
+
+      asyncio.run(wait_for_mysql())
+      PY
   script:
     - python -m pytest -q
 
