@@ -125,11 +125,30 @@ prefix="${prefix#/}"
 prefix="${prefix%/}"
 upload() {
   local source="$1"
-  local name
+  local name size started pid elapsed next_log
   name="$(basename "$source")"
-  echo "[upload] $name -> cos://$bucket/$prefix/$name"
+  size="$(wc -c < "$source" | tr -d '[:space:]')"
+  echo "[upload] starting $name ($size bytes) -> cos://$bucket/$prefix/$name"
+  started="$SECONDS"
   coscli cp "$source" "cos://$bucket/$prefix/$name" \
-    --acl public-read --disable-log=true -c "$config_path"
+    --acl public-read \
+    --log-path "$release_dir/coscli.log" \
+    -c "$config_path" &
+  pid=$!
+  next_log=30
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 2
+    elapsed=$((SECONDS - started))
+    if [[ "$elapsed" -ge "$next_log" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "[upload] $name still running; elapsed ${elapsed}s"
+      next_log=$((next_log + 30))
+    fi
+  done
+  if ! wait "$pid"; then
+    echo "[upload] failed: $name after $((SECONDS - started))s" >&2
+    return 1
+  fi
+  echo "[upload] completed $name in $((SECONDS - started))s"
 }
 
 # 版本产物全部成功后，最后更新 latest-mac.yml 指针。
