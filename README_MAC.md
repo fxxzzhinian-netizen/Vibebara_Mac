@@ -50,8 +50,9 @@ VIBEBARA_UPDATE_URL                # 公开 HTTPS 地址，末尾建议带 /
 
 ## 从国内 Windows 发布 GitHub Artifact
 
-国内 Windows 发布机安装 COSCLI 1.0.8 或更高版本，将下载的 GitHub Artifact
-解压到单独目录，然后在 PowerShell 中设置：
+国内 Windows 发布机安装 COSCLI 1.0.8 或更高版本，将 GitHub 下载的
+`VBB-mac-<version>-arm64.zip` 原样放入仓库的 `mac_release/`，不要手动改名。
+在 PowerShell 中设置：
 
 ```powershell
 $env:COS_BUCKET = "vibebara-exe-1327732770"
@@ -59,27 +60,19 @@ $env:COS_REGION = "ap-chengdu"
 $env:COS_SECRET_ID = "..."
 $env:COS_SECRET_KEY = "..."
 
-# 可先仅校验文件和更新元数据
-powershell -ExecutionPolicy Bypass -File `
-  .\desktop\scripts\publish-mac-update-cos.ps1 `
-  -ReleaseDir "C:\Downloads\VBB-mac-1.4.3-arm64" `
-  -Prefix "desktop/macos" `
-  -UpdateUrl "https://vibebara-exe-1327732770.cos.ap-chengdu.myqcloud.com/desktop/macos/" `
-  -DryRun
+# 自动选择 mac_release/ 中最新的完整 Artifact，解压并校验
+.\publish-mac-release.ps1 -DryRun
 
-# 确认后正式上传
-powershell -ExecutionPolicy Bypass -File `
-  .\desktop\scripts\publish-mac-update-cos.ps1 `
-  -ReleaseDir "C:\Downloads\VBB-mac-1.4.3-arm64" `
-  -Prefix "desktop/macos" `
-  -UpdateUrl "https://vibebara-exe-1327732770.cos.ap-chengdu.myqcloud.com/desktop/macos/"
+# 校验通过后，一键解压、上传、切换 latest-mac.yml 并回读验证
+.\publish-mac-release.ps1
 ```
 
 如使用临时密钥，还需设置 `COS_SESSION_TOKEN`。脚本校验 ZIP SHA-512，先上传
 DMG、ZIP 和 blockmap，最后上传 `latest-mac.yml`，并通过公开 HTTPS 地址回读
 所有文件。COS 凭据应限制为目标桶/前缀，并允许上传对象和设置 `public-read`
 ACL。脚本默认前缀固定为 `desktop/macos`，不会读取 Windows 发布使用的
-`VIBEBARA_COS_UPDATE_PREFIX`。
+`VIBEBARA_COS_UPDATE_PREFIX`。如需指定历史 Artifact，可传
+`-ArtifactPath "C:\path\VBB-mac-1.4.3-arm64.zip"`。
 
 ## 正式签名与公证
 
