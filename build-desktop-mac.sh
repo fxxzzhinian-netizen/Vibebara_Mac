@@ -12,9 +12,9 @@ Usage:
   ./build-desktop-mac.sh --no-be
   ./build-desktop-mac.sh --dev
   ./build-desktop-mac.sh --pack
-  ./build-desktop-mac.sh --unsigned-dist [--publish]
+  ./build-desktop-mac.sh --unsigned-dist [--prepare-update | --publish]
   ./build-desktop-mac.sh --dist [--publish]
-  ./build-desktop-mac.sh --unsigned-dist --publish --version 1.5.0
+  ./build-desktop-mac.sh --unsigned-dist --prepare-update --version 1.5.0
   ./build-desktop-mac.sh --force-install
 EOF
 }
@@ -27,6 +27,7 @@ pack=0
 unsigned_dist=0
 dist=0
 publish=0
+prepare_update=0
 force_install=0
 build_version=""
 
@@ -40,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     --unsigned-dist) unsigned_dist=1 ;;
     --dist) dist=1 ;;
     --publish) publish=1 ;;
+    --prepare-update) prepare_update=1 ;;
     --force-install) force_install=1 ;;
     --version)
       [[ $# -ge 2 ]] || {
@@ -62,6 +64,14 @@ if [[ "$package_modes" -gt 1 ]]; then
 fi
 if [[ "$publish" -eq 1 && "$dist" -eq 0 && "$unsigned_dist" -eq 0 ]]; then
   echo "--publish requires --dist or --unsigned-dist." >&2
+  exit 2
+fi
+if [[ "$prepare_update" -eq 1 && "$unsigned_dist" -eq 0 ]]; then
+  echo "--prepare-update requires --unsigned-dist." >&2
+  exit 2
+fi
+if [[ "$prepare_update" -eq 1 && "$publish" -eq 1 ]]; then
+  echo "Choose only one: --prepare-update or --publish." >&2
   exit 2
 fi
 if [[ -n "$build_version" && "$package_modes" -eq 0 ]]; then
@@ -304,7 +314,7 @@ fi
 if [[ "$unsigned_dist" -eq 1 ]]; then
   section "Package unsigned macOS arm64 DMG/ZIP"
   export CSC_IDENTITY_AUTO_DISCOVERY=false
-  if [[ "$publish" -eq 1 ]]; then
+  if [[ "$publish" -eq 1 || "$prepare_update" -eq 1 ]]; then
     run_in "$desktop_dir" npm run dist:mac:update-unsigned
   else
     run_in "$desktop_dir" npm run dist:mac:unsigned
