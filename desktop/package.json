@@ -19,10 +19,10 @@
     "dist:win:unsigned": "electron-builder --config electron-builder.yml --win --publish never",
     "dist:win:update-unsigned": "npm run release:check:unsigned && electron-builder --config electron-builder.unsigned-release.yml --win --publish never",
     "dist:win": "npm run release:check && electron-builder --config electron-builder.release.yml --win --publish never",
-    "pack:mac": "electron-builder --config electron-builder.mac.yml --mac arm64 --dir",
-    "dist:mac:unsigned": "electron-builder --config electron-builder.mac.yml --mac arm64 --publish never",
-    "dist:mac:update-unsigned": "npm run release:check:unsigned -- --platform=darwin && electron-builder --config electron-builder.mac.unsigned-release.yml --mac arm64 --publish never",
-    "dist:mac": "npm run release:check -- --platform=darwin && electron-builder --config electron-builder.mac.release.yml --mac arm64 --publish never"
+    "pack:mac": "electron-builder --config electron-builder.mac.yml --mac --arm64 --dir",
+    "dist:mac:unsigned": "electron-builder --config electron-builder.mac.yml --mac --arm64 --publish never",
+    "dist:mac:update-unsigned": "npm run release:check:unsigned -- --platform=darwin && electron-builder --config electron-builder.mac.unsigned-release.yml --mac --arm64 --publish never",
+    "dist:mac": "npm run release:check -- --platform=darwin && electron-builder --config electron-builder.mac.release.yml --mac --arm64 --publish never"
   },
   "engines": {
     "node": ">=22.12.0"
