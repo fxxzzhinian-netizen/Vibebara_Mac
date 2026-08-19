@@ -58,24 +58,28 @@ $env:COS_BUCKET = "vibebara-exe-1327732770"
 $env:COS_REGION = "ap-chengdu"
 $env:COS_SECRET_ID = "..."
 $env:COS_SECRET_KEY = "..."
-$env:VIBEBARA_COS_UPDATE_PREFIX = "desktop/macos"
-$env:VIBEBARA_UPDATE_URL = "https://vibebara-exe-1327732770.cos.ap-chengdu.myqcloud.com/desktop/macos/"
 
 # 可先仅校验文件和更新元数据
 powershell -ExecutionPolicy Bypass -File `
   .\desktop\scripts\publish-mac-update-cos.ps1 `
-  -ReleaseDir "C:\Downloads\VBB-mac-1.4.3-arm64" -DryRun
+  -ReleaseDir "C:\Downloads\VBB-mac-1.4.3-arm64" `
+  -Prefix "desktop/macos" `
+  -UpdateUrl "https://vibebara-exe-1327732770.cos.ap-chengdu.myqcloud.com/desktop/macos/" `
+  -DryRun
 
 # 确认后正式上传
 powershell -ExecutionPolicy Bypass -File `
   .\desktop\scripts\publish-mac-update-cos.ps1 `
-  -ReleaseDir "C:\Downloads\VBB-mac-1.4.3-arm64"
+  -ReleaseDir "C:\Downloads\VBB-mac-1.4.3-arm64" `
+  -Prefix "desktop/macos" `
+  -UpdateUrl "https://vibebara-exe-1327732770.cos.ap-chengdu.myqcloud.com/desktop/macos/"
 ```
 
 如使用临时密钥，还需设置 `COS_SESSION_TOKEN`。脚本校验 ZIP SHA-512，先上传
 DMG、ZIP 和 blockmap，最后上传 `latest-mac.yml`，并通过公开 HTTPS 地址回读
 所有文件。COS 凭据应限制为目标桶/前缀，并允许上传对象和设置 `public-read`
-ACL。
+ACL。脚本默认前缀固定为 `desktop/macos`，不会读取 Windows 发布使用的
+`VIBEBARA_COS_UPDATE_PREFIX`。
 
 ## 正式签名与公证
 

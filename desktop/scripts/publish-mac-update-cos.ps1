@@ -5,8 +5,8 @@ param(
     [string]$ReleaseDir = (Get-Location).Path,
     [string]$Bucket = $env:COS_BUCKET,
     [string]$Region = $env:COS_REGION,
-    [string]$Prefix = $(if ($env:VIBEBARA_COS_UPDATE_PREFIX) { $env:VIBEBARA_COS_UPDATE_PREFIX } else { "desktop/macos" }),
-    [string]$UpdateUrl = $env:VIBEBARA_UPDATE_URL,
+    [string]$Prefix = "desktop/macos",
+    [string]$UpdateUrl = $env:VIBEBARA_MAC_UPDATE_URL,
     [string]$CosCli = "coscli",
     [switch]$DryRun
 )
@@ -171,9 +171,15 @@ Require-Value $Bucket "COS_BUCKET"
 Require-Value $Region "COS_REGION"
 $Prefix = $Prefix.Trim().Trim("/")
 if (-not $Prefix) {
-    throw "VIBEBARA_COS_UPDATE_PREFIX cannot be empty"
+    throw "macOS COS prefix cannot be empty"
 }
-Require-Value $UpdateUrl "VIBEBARA_UPDATE_URL"
+if ($Prefix -match '(^|/)windows($|/)') {
+    throw "Refusing to publish macOS artifacts under a Windows update prefix: $Prefix"
+}
+if ([string]::IsNullOrWhiteSpace($UpdateUrl)) {
+    $UpdateUrl = "https://$Bucket.cos.$Region.myqcloud.com/$Prefix/"
+}
+Require-Value $UpdateUrl "-UpdateUrl or VIBEBARA_MAC_UPDATE_URL"
 try {
     $parsedUpdateUrl = [uri]$UpdateUrl
     if ($parsedUpdateUrl.Scheme -ne "https") { throw "HTTPS required" }
