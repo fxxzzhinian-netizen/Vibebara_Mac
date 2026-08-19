@@ -272,17 +272,16 @@ function createWindow(): void {
     height: 800,
     title: "Vibebara",
     autoHideMenuBar: true,
-    // 去掉原生标题栏/顶部边框：隐藏系统标题栏，仅以 overlay 形式保留右上角
-    // 最小化/最大化/关闭三个原生窗口按钮（底色与前端顶栏白色一致，图标取主色）。
-    // 窗口拖动区域由前端顶栏通过 CSS `-webkit-app-region: drag` 提供（见 AppTopNav.vue）。
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      // 取前端画布 bg.png 顶部的浅紫色，让右上角窗口按钮底色融入背景，避免突兀白块。
-      color: "#ece8f7",
-      symbolColor: "#151717",
-      // 高度需与前端 .win-bar 一致（见 frontend/src/components/AppTopNav.vue）。
-      height: 40,
-    },
+    // Windows 保留原有 overlay 按钮；macOS 使用原生 traffic lights 的 hiddenInset。
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
+    titleBarOverlay:
+      process.platform === "darwin"
+        ? false
+        : {
+            color: "#ece8f7",
+            symbolColor: "#151717",
+            height: 40,
+          },
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,

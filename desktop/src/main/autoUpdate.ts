@@ -58,9 +58,14 @@ export function installDesktopUpdate(): boolean {
   if (!configured || state.status !== "downloaded") {
     return false;
   }
-  // 先让 IPC 响应返回渲染层，再静默退出、覆盖安装并自动重启。
-  // NSIS 仍会替换旧程序文件，但不再显示卸载/安装向导。
-  setImmediate(() => autoUpdater.quitAndInstall(true, true));
+  // 参数只对 Windows NSIS 有意义；macOS 使用签名 ZIP 的默认安装语义。
+  setImmediate(() => {
+    if (process.platform === "darwin") {
+      autoUpdater.quitAndInstall();
+    } else {
+      autoUpdater.quitAndInstall(true, true);
+    }
+  });
   return true;
 }
 

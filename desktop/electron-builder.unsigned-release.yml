@@ -1,10 +1,2 @@
-extends: ./electron-builder.yml
-
-# 过渡期未签名自动更新：保留 updater 元数据，但明确关闭代码签名强制要求。
-# 获取正式证书后应切回 electron-builder.release.yml。
-win:
-  forceCodeSigning: false
-
-publish:
-  provider: generic
-  url: ${env.VIBEBARA_UPDATE_URL}
+# Windows 未签名更新兼容入口。
+extends: ./electron-builder.win.unsigned-release.yml

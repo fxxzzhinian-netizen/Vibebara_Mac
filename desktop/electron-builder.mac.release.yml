@@ -1,0 +1,12 @@
+extends: ./electron-builder.mac.yml
+
+mac:
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+
+publish:
+  provider: generic
+  url: ${env.VIBEBARA_UPDATE_URL}

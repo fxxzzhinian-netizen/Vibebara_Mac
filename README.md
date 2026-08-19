@@ -312,6 +312,21 @@ cd ..
 > NSIS 安装包内置无需 Node.js 的 `vibebara.exe`，并把其目录加入当前用户 PATH。
 > 安装或覆盖升级后需要**重新打开终端**，再运行 `vibebara --version` 验证。
 
+### 打包为 macOS arm64 安装包
+
+macOS 与 Windows 共用当前仓库源码，需在 Apple Silicon Mac 上执行：
+
+```bash
+chmod +x build-desktop-mac.sh
+./build-desktop-mac.sh --unsigned-dist  # 内测 DMG/ZIP
+./build-desktop-mac.sh --dist           # Developer ID 签名并公证
+./build-desktop-mac.sh --dist --publish # 发布到 COS desktop/macos/
+```
+
+产物写入 `desktop/release-mac/`。应用内置无需 Node.js 的 arm64 CLI；DMG
+不会自动修改 PATH，首次使用需运行应用资源目录中的 `install-cli.sh`。
+签名、公证、COS 环境变量和验收步骤见 [README_MAC.md](README_MAC.md)。
+
 ### CLI 授权与使用
 
 1. 安装并登录 Vibebara Desktop。
@@ -334,7 +349,7 @@ CLI Key 只绑定签发它的桌面设备；旧终端下次请求会提示账号
 ```powershell
 $env:VIBEBARA_CLOUD_API_BASE = "http://162.14.106.190:8000/api/v1"
 $env:VIBEBARA_CLOUD_WS_BASE  = "ws://162.14.106.190:8000"
-$env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
+$env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/windows/"
 ```
 
 - **配置文件**：`%APPDATA%/@vibebara/desktop/vibebara-desktop.config.json`
@@ -343,7 +358,7 @@ $env:VIBEBARA_UPDATE_URL     = "https://你的更新域名/desktop/"
 {
   "cloudApiBase": "http://162.14.106.190:8000/api/v1",
   "cloudWsBase": "ws://162.14.106.190:8000",
-  "updateUrl": "https://你的更新域名/desktop/"
+  "updateUrl": "https://你的更新域名/desktop/windows/"
 }
 ```
 
@@ -390,4 +405,4 @@ chmod +x start.sh && ./start.sh
 - **项目动态不实时**：确认后端已运行、页面顶部显示「实时同步中」；前端已内置 WebSocket 自动重连与轮询兜底。WS 为进程内内存态，后端**必须单进程**（`--workers 1`）。
 - **桌面壳启动白屏 / 接口 401**：确认 cloud 模式后端已启动，且 `ALLOWED_ORIGINS` 显式包含 `"null"`（Electron `file://` Origin）及实际 Web 域名；不要使用 `ALLOW_ORIGIN_REGEX=.*`。
 - **桌面壳提示本地代理不可用**：确认 `local-agent/dist/index.js` 已构建（`build-desktop.ps1` 会自动构建）。主进程会自动拉起代理进程；崩溃后自动重启并漂移端口。
-- **授权后终端仍提示找不到 `vibebara`**：授权只写入凭据；安装包会注册 CLI PATH，但已打开的终端不会自动刷新。关闭并重新打开终端后运行 `Get-Command vibebara`。源码开发态请先按上文构建并执行 `npm link`。
+- **授权后终端仍提示找不到 `vibebara`**：授权只写入凭据。Windows 安装包会注册 CLI PATH，关闭并重新打开终端后运行 `Get-Command vibebara`；macOS 首次使用需运行 `/Applications/Vibebara.app/Contents/Resources/cli/install-cli.sh`，再执行 `command -v vibebara`。源码开发态请先按上文构建并执行 `npm link`。

@@ -21,6 +21,12 @@ export function buildRuntimeConfig(opts: {
 }): RuntimeConfigPayload {
   return {
     mode: "desktop",
+    platform:
+      process.platform === "darwin"
+        ? "darwin"
+        : process.platform === "linux"
+          ? "linux"
+          : "win32",
     cloudApiBase: opts.cloud.cloudApiBase,
     cloudWsBase: opts.cloud.cloudWsBase,
     localAgentBase: `http://127.0.0.1:${opts.port}`,

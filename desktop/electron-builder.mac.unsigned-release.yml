@@ -1,0 +1,10 @@
+extends: ./electron-builder.mac.yml
+
+mac:
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+publish:
+  provider: generic
+  url: ${env.VIBEBARA_UPDATE_URL}

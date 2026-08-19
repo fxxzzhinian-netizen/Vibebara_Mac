@@ -18,6 +18,8 @@ import logoIconUrl from '@/img/logo_icon.png'
 
 // 桌面壳（Electron）下隐藏了原生标题栏，顶栏需充当窗口拖动区，并为右上角原生窗口按钮留白。
 const desktop = isDesktop()
+const desktopPlatform = getRuntimeConfig().platform
+const macDesktop = desktop && desktopPlatform === 'darwin'
 // 开发服务器中保留桌面专属入口，便于在浏览器里调整 UI；生产 Web 端仍隐藏。
 const showDesktopUpdateAction = desktop || import.meta.env.DEV
 
@@ -310,7 +312,18 @@ async function authorizeCli() {
         })
         closeUserMenu()
         if (result.cliBundled) {
-          toast.success('CLI 已授权；请重新打开终端后运行 vibebara whoami')
+          if (macDesktop) {
+            const installer = result.cliPath
+              ? result.cliPath.replace(/\/vibebara$/, '/install-cli.sh')
+              : ''
+            toast.success(
+              installer
+                ? `CLI 已授权；首次使用请运行 ${installer}`
+                : 'CLI 已授权；安装命令后运行 vibebara whoami',
+            )
+          } else {
+            toast.success('CLI 已授权；请重新打开终端后运行 vibebara whoami')
+          }
         } else {
           toast.success(
             `CLI 凭据已写入 ${result.configPath}；开发环境请先在 cli 目录运行 npm link`,
@@ -378,7 +391,11 @@ onBeforeUnmount(() => {
 <template>
   <header :class="['top-nav', { 'is-desktop': desktop }]">
     <!-- 桌面壳：单独一条窗口标题栏，承载右上角原生窗口按钮 + 作为拖动区，避免挤压下方导航 -->
-    <div v-if="desktop" class="win-bar" aria-hidden="true"></div>
+    <div
+      v-if="desktop"
+      :class="macDesktop ? 'mac-bar' : 'win-bar'"
+      aria-hidden="true"
+    ></div>
 
     <div class="nav-inner">
       <!-- 左：logo -->
@@ -750,6 +767,12 @@ onBeforeUnmount(() => {
    高度需与主进程 titleBarOverlay.height 一致（见 desktop/src/main/index.ts）。 */
 .win-bar {
   height: 40px;
+  -webkit-app-region: drag;
+}
+
+/* 为 macOS traffic lights 保留原生标题栏空间，同时提供可拖动区域。 */
+.mac-bar {
+  height: 30px;
   -webkit-app-region: drag;
 }
 

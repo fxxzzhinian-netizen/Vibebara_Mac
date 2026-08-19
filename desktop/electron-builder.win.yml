@@ -1,0 +1,46 @@
+extends: ./electron-builder.base.yml
+
+# 保持 Windows 安装包、更新元数据和现有 COS 发布脚本的命名契约。
+artifactName: "VBB-Setup-${version}.${ext}"
+
+extraResources:
+  - from: ../local-agent/dist
+    to: local-agent/dist
+    filter: ["**/*"]
+  - from: ../local-agent/node_modules/ws
+    to: local-agent/node_modules/ws
+    filter: ["**/*"]
+  - from: ../local-agent/node_modules/js-yaml
+    to: local-agent/node_modules/js-yaml
+    filter: ["**/*"]
+  - from: ../local-agent/node_modules/argparse
+    to: local-agent/node_modules/argparse
+    filter: ["**/*"]
+  - from: ../local-core
+    to: local-agent/node_modules/@vibebara/local-core
+    filter:
+      - package.json
+      - dist/**/*
+  - from: ../local-agent/package.json
+    to: local-agent/package.json
+  - from: ../frontend/dist
+    to: frontend/dist
+    filter: ["**/*"]
+  - from: ../cli/release
+    to: cli
+    filter:
+      - vibebara.exe
+  - from: scripts/update-cli-path.ps1
+    to: cli/update-cli-path.ps1
+
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false
+  include: build/installer.nsh

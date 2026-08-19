@@ -1,0 +1,62 @@
+extends: ./electron-builder.base.yml
+
+artifactName: "VBB-mac-${version}-${arch}.${ext}"
+
+directories:
+  output: release-mac
+  buildResources: build
+
+extraResources:
+  - from: ../local-agent/dist
+    to: local-agent/dist
+    filter: ["**/*"]
+  - from: ../local-agent/node_modules/ws
+    to: local-agent/node_modules/ws
+    filter: ["**/*"]
+  - from: ../local-agent/node_modules/js-yaml
+    to: local-agent/node_modules/js-yaml
+    filter: ["**/*"]
+  - from: ../local-agent/node_modules/argparse
+    to: local-agent/node_modules/argparse
+    filter: ["**/*"]
+  - from: ../local-core
+    to: local-agent/node_modules/@vibebara/local-core
+    filter:
+      - package.json
+      - dist/**/*
+  - from: ../local-agent/package.json
+    to: local-agent/package.json
+  - from: ../frontend/dist
+    to: frontend/dist
+    filter: ["**/*"]
+  - from: ../cli/release
+    to: cli
+    filter:
+      - vibebara
+  - from: scripts/install-cli.sh
+    to: cli/install-cli.sh
+
+mac:
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+  minimumSystemVersion: "11.0"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+
+dmg:
+  title: "Vibebara ${version}"
+  format: UDZO
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

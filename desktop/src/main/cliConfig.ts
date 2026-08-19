@@ -26,8 +26,12 @@ export function cliConfigPath(): string {
 }
 
 function bundledCliPath(): string | undefined {
-  if (process.platform !== "win32" || !process.resourcesPath) return undefined;
-  const candidate = path.join(process.resourcesPath, "cli", "vibebara.exe");
+  if (!process.resourcesPath) return undefined;
+  if (process.platform !== "win32" && process.platform !== "darwin") {
+    return undefined;
+  }
+  const executable = process.platform === "win32" ? "vibebara.exe" : "vibebara";
+  const candidate = path.join(process.resourcesPath, "cli", executable);
   return fs.existsSync(candidate) ? candidate : undefined;
 }
 

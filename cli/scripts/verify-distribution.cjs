@@ -7,7 +7,8 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const distEntry = path.join(root, "dist", "index.js");
 const bundleEntry = path.join(root, "release", "vibebara.cjs");
-const executable = path.join(root, "release", "vibebara.exe");
+const executableName = process.platform === "win32" ? "vibebara.exe" : "vibebara";
+const executable = path.join(root, "release", executableName);
 
 function assert(condition, message) {
   if (!condition) throw new Error(`[cli-distribution] ${message}`);
@@ -38,16 +39,17 @@ if (hasBundle) {
   assert(run(process.execPath, [bundleEntry, "--help"]).includes("Usage: vibebara"), "CJS bundle help 异常");
 }
 
-if (process.platform === "win32") {
-  assert(hasExecutable, "Windows 缺少 release/vibebara.exe");
-  const restrictedEnv = {
-    ...process.env,
-    PATH: path.join(process.env.SystemRoot || "C:\\Windows", "System32"),
-  };
-  assert(
-    run(executable, ["--version"], restrictedEnv).includes("0.1.0"),
-    "SEA 在无 Node PATH 环境下无法执行",
-  );
-}
+const restrictedEnv =
+  process.platform === "win32"
+    ? {
+        ...process.env,
+        PATH: path.join(process.env.SystemRoot || "C:\\Windows", "System32"),
+      }
+    : { ...process.env, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+assert(hasExecutable, `缺少 release/${executableName}`);
+assert(
+  run(executable, ["--version"], restrictedEnv).includes("0.1.0"),
+  "SEA 在无 Node PATH 环境下无法执行",
+);
 
 console.log("[cli-distribution] npm bin and bundle/standalone executable verified");

@@ -27,11 +27,15 @@ Vibebara 是面向 Cursor、Codex 等 Vibe Coding 工具的 Skill 协作平台�
 
 ### 2.1 下载安装包
 
-下载当前版本：
+Windows 当前版本：
 
 - [VBB-Setup-1.4.0.exe](https://vibebara-exe-1327732770.cos.ap-chengdu.myqcloud.com/desktop/windows/VBB-Setup-1.4.0.exe)
 
 当前安装包未进行 Windows 代码签名。如果 SmartScreen 显示“Windows 已保护你的电脑”，请确认文件来源后选择“更多信息”继续安装。
+
+macOS Apple Silicon（M1/M2/M3/M4）版本使用
+`VBB-mac-<version>-arm64.dmg`。正式发布包应具有 Developer ID 签名和 Apple 公证；
+未签名内测包可能被 Gatekeeper 拦截。
 
 ### 2.2 完成安装
 
@@ -46,11 +50,18 @@ Vibebara 是面向 Cursor、Codex 等 Vibe Coding 工具的 Skill 协作平台�
 %LOCALAPPDATA%\Programs\Vibebara
 ```
 
+macOS 用户打开 DMG 后，将 Vibebara 拖入 Applications。应用内置独立 CLI，
+无需安装 Node.js；首次使用 CLI 时执行：
+
+```bash
+/Applications/Vibebara.app/Contents/Resources/cli/install-cli.sh
+```
+
 ### 2.3 验证 CLI
 
-新开 PowerShell，执行：
+重新打开 PowerShell 或 macOS Terminal，执行：
 
-```powershell
+```text
 vibebara --version
 ```
 
@@ -354,17 +365,21 @@ CLI API Key 绑定当前登录的桌面设备；在另一台设备登录账号�
 2. 点击右上角头像。
 3. 点击“生成 CLI API Key”。
 4. 已有 Key 时可点击“轮换 CLI API Key”。
-5. 重新打开终端。
+5. Windows 重新打开终端；macOS 首次使用先运行应用内的 `install-cli.sh`。
 6. 执行：
 
-```powershell
+```text
 vibebara whoami
 ```
 
 CLI 配置保存在：
 
 ```text
+# Windows
 %USERPROFILE%\.vibebara\config.json
+
+# macOS
+~/.vibebara/config.json
 ```
 
 不要分享该文件或其中的 API Key。

@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { build } = require("esbuild");
@@ -14,8 +15,12 @@ const buildDir = path.join(releaseDir, ".sea-build");
 const bundlePath = path.join(releaseDir, "vibebara.cjs");
 const blobPath = path.join(buildDir, "vibebara.blob");
 const configPath = path.join(buildDir, "sea-config.json");
-const executablePath = path.join(releaseDir, "vibebara.exe");
+const executableName = process.platform === "win32" ? "vibebara.exe" : "vibebara";
+const executablePath = path.join(releaseDir, executableName);
 const bundleOnly = process.argv.includes("--bundle-only");
+const requiredPlatform = process.argv
+  .find((arg) => arg.startsWith("--require-platform="))
+  ?.slice("--require-platform=".length);
 
 function fail(message) {
   throw new Error(`[cli-sea] ${message}`);
@@ -31,11 +36,12 @@ function assertNodeVersion() {
   }
 }
 
-function runSmoke(command, args) {
+function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
     windowsHide: true,
     env: process.env,
+    ...options,
   });
   if (result.error) {
     fail(`${path.basename(command)} ${args.join(" ")} 启动失败: ${result.error.message}`);
@@ -46,6 +52,31 @@ function runSmoke(command, args) {
         `${result.stdout || ""}${result.stderr || ""}`,
     );
   }
+  return `${result.stdout || ""}${result.stderr || ""}`;
+}
+
+function removeMacSignature(file) {
+  if (process.platform !== "darwin") return;
+  const result = spawnSync("codesign", ["--remove-signature", file], {
+    encoding: "utf8",
+  });
+  // Node 的下载包有时没有可移除的签名；只在命令本身无法启动时阻断。
+  if (result.error) {
+    fail(`codesign --remove-signature 启动失败: ${result.error.message}`);
+  }
+}
+
+function signMacAdHoc(file) {
+  if (process.platform !== "darwin") return;
+  run("codesign", ["--sign", "-", "--force", file]);
+}
+
+function injectionOptions() {
+  const options = { sentinelFuse: SEA_FUSE };
+  if (process.platform === "darwin") {
+    options.machoSegmentName = "NODE_SEA";
+  }
+  return options;
 }
 
 async function main() {
@@ -53,8 +84,11 @@ async function main() {
   if (!fs.existsSync(coreEntry)) {
     fail("缺少 local-core/dist/index.js；请先在 local-core 执行 npm run build");
   }
-  if (!bundleOnly && process.platform !== "win32") {
-    fail("Windows SEA 必须在 Windows 发布机上生成；其他平台请使用 --bundle-only");
+  if (requiredPlatform && process.platform !== requiredPlatform) {
+    fail(`该构建必须在 ${requiredPlatform} 上运行；当前为 ${process.platform}`);
+  }
+  if (!["win32", "darwin", "linux"].includes(process.platform)) {
+    fail(`不支持的 SEA 平台: ${process.platform}`);
   }
 
   fs.mkdirSync(releaseDir, { recursive: true });
@@ -72,8 +106,8 @@ async function main() {
     minify: false,
     footer: { js: "void module.exports.run();" },
   });
-  runSmoke(process.execPath, [bundlePath, "--version"]);
-  runSmoke(process.execPath, [bundlePath, "--help"]);
+  run(process.execPath, [bundlePath, "--version"]);
+  run(process.execPath, [bundlePath, "--help"]);
   console.log(`[cli-sea] CJS bundle ready: ${bundlePath}`);
 
   if (bundleOnly) {
@@ -109,16 +143,24 @@ async function main() {
   }
 
   fs.copyFileSync(process.execPath, executablePath);
-  await inject(executablePath, "NODE_SEA_BLOB", fs.readFileSync(blobPath), {
-    sentinelFuse: SEA_FUSE,
-  });
+  removeMacSignature(executablePath);
+  await inject(
+    executablePath,
+    "NODE_SEA_BLOB",
+    fs.readFileSync(blobPath),
+    injectionOptions(),
+  );
+  if (process.platform !== "win32") {
+    fs.chmodSync(executablePath, 0o755);
+  }
+  signMacAdHoc(executablePath);
 
-  runSmoke(executablePath, ["--version"]);
-  runSmoke(executablePath, ["--help"]);
+  run(executablePath, ["--version"]);
+  run(executablePath, ["--help"]);
   fs.rmSync(bundlePath, { force: true });
   fs.rmSync(buildDir, { recursive: true, force: true });
   console.log(
-    `[cli-sea] Windows executable ready: ${executablePath} ` +
+    `[cli-sea] ${os.platform()} executable ready: ${executablePath} ` +
       `(${Math.ceil(fs.statSync(executablePath).size / 1024 / 1024)} MiB)`,
   );
 }

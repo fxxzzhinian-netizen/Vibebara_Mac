@@ -1,0 +1,145 @@
+name: macOS Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (major.minor.patch)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-desktop-cos-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build arm64 and publish to COS
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment: macos-cos-release
+    env:
+      COS_BUCKET: ${{ vars.COS_BUCKET }}
+      COS_REGION: ${{ vars.COS_REGION }}
+      VIBEBARA_COS_UPDATE_PREFIX: ${{ vars.VIBEBARA_COS_UPDATE_PREFIX || 'desktop/macos' }}
+      VIBEBARA_UPDATE_URL: ${{ vars.VIBEBARA_UPDATE_URL }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate release input and environment
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::version must use major.minor.patch, for example 1.5.0"
+            exit 2
+          }
+          [[ "$(uname -m)" == "arm64" ]] || {
+            echo "::error::This workflow requires an Apple Silicon arm64 runner."
+            exit 1
+          }
+          for name in COS_BUCKET COS_REGION VIBEBARA_UPDATE_URL; do
+            [[ -n "${!name:-}" ]] || {
+              echo "::error::Missing GitHub Environment value: $name"
+              exit 1
+            }
+          done
+          [[ "$VIBEBARA_UPDATE_URL" == https://* ]] || {
+            echo "::error::VIBEBARA_UPDATE_URL must use HTTPS."
+            exit 1
+          }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+          cache-dependency-path: |
+            local-core/package-lock.json
+            cli/package-lock.json
+            local-agent/package-lock.json
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - name: Install Node.js dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for workspace in local-core cli local-agent frontend desktop; do
+            echo "::group::npm ci ($workspace)"
+            npm ci --prefix "$workspace" --loglevel=error
+            echo "::endgroup::"
+          done
+
+      - name: Install COSCLI
+        shell: bash
+        env:
+          COSCLI_VERSION: 1.0.8
+          COSCLI_SHA256: df0018fbf78b552cbe875ebe26e8bdf7938c7f4394959f913dfc2ea4d1252568
+        run: |
+          set -euo pipefail
+          asset="coscli-v${COSCLI_VERSION}-darwin-arm64"
+          install_dir="$RUNNER_TEMP/coscli-bin"
+          mkdir -p "$install_dir"
+          curl --fail --location --silent --show-error \
+            "https://github.com/tencentyun/coscli/releases/download/v${COSCLI_VERSION}/${asset}" \
+            --output "$install_dir/coscli"
+          echo "${COSCLI_SHA256}  $install_dir/coscli" | shasum -a 256 --check
+          chmod +x "$install_dir/coscli"
+          echo "$install_dir" >> "$GITHUB_PATH"
+
+      - name: Build and publish unsigned macOS release
+        shell: bash
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+          COS_SESSION_TOKEN: ${{ secrets.COS_SESSION_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          for name in COS_SECRET_ID COS_SECRET_KEY; do
+            [[ -n "${!name:-}" ]] || {
+              echo "::error::Missing GitHub Environment secret: $name"
+              exit 1
+            }
+          done
+          chmod +x build-desktop-mac.sh
+          ./build-desktop-mac.sh \
+            --unsigned-dist \
+            --publish \
+            --version "$RELEASE_VERSION"
+
+      - name: Upload macOS release artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VBB-mac-${{ inputs.version }}-arm64
+          path: desktop/release-mac/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Write release summary
+        if: always()
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          {
+            echo "## macOS desktop release"
+            echo
+            echo "- Status: ${{ job.status }}"
+            echo "- Version: \`$RELEASE_VERSION\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Architecture: \`arm64\`"
+            echo "- COS prefix: \`${VIBEBARA_COS_UPDATE_PREFIX%/}/\`"
+            echo "- Update URL: \`${VIBEBARA_UPDATE_URL%/}/\`"
+            echo
+            echo "> This workflow publishes unsigned internal-test artifacts."
+          } >> "$GITHUB_STEP_SUMMARY"

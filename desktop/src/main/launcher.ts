@@ -1,4 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type {
   LauncherLaunchRequest,
   LauncherLaunchResponse,
@@ -133,8 +136,39 @@ function appxCmd(uri: string): ResolvedCommand {
   return { cmd: ["explorer.exe", uri], viaAppx: true };
 }
 
+const MAC_APP_NAMES: Partial<Record<LauncherToolId, string[]>> = {
+  cursor: ["Cursor"],
+  "codex-app": ["ChatGPT", "Codex"],
+  windsurf: ["Windsurf"],
+  "claude-app": ["Claude"],
+  kiro: ["Kiro"],
+  trae: ["Trae", "TRAE"],
+  qoder: ["Qoder"],
+  workbuddy: ["WorkBuddy"],
+};
+
+/** macOS GUI 应用通常不在 PATH；从标准 Applications 目录发现后交给 `open -a`。 */
+function findMacApp(tool: LauncherToolId): ResolvedCommand | null {
+  if (!IS_MAC) return null;
+  const names = MAC_APP_NAMES[tool] ?? [];
+  const roots = [
+    "/Applications",
+    path.join(os.homedir(), "Applications"),
+    "/System/Applications",
+  ];
+  for (const name of names) {
+    if (roots.some((root) => fs.existsSync(path.join(root, `${name}.app`)))) {
+      return { cmd: ["open", "-a", name], viaAppx: false };
+    }
+  }
+  return null;
+}
+
 /** 解析工具启动命令；未找到抛错。viaAppx=true 表示经 AppsFolder 激活，调用方不得追加任何参数。 */
 function resolveCommand(tool: LauncherToolId): ResolvedCommand {
+  const macApp = findMacApp(tool);
+  if (macApp) return macApp;
+
   if (tool === "cursor") {
     const exe = IS_WINDOWS ? which("cursor.cmd", "cursor") : which("cursor");
     if (exe) return exeCmd(exe);

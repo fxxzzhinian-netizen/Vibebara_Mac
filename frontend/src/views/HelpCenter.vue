@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppTopNav from '@/components/AppTopNav.vue'
 import { toast } from '@/composables/useToast'
 import { isDesktop } from '@/runtime/desktopBridge'
+import { getRuntimeConfig } from '@/runtime/config'
 
 type ParagraphBlock = { type: 'paragraph'; text: string }
 type ListBlock = { type: 'list' | 'steps'; items: string[] }
@@ -32,6 +33,8 @@ interface DocArticle {
 }
 
 const desktop = isDesktop()
+const isMac = getRuntimeConfig().platform === 'darwin'
+const terminalLabel = isMac ? 'Terminal (zsh)' : 'PowerShell'
 const route = useRoute()
 const router = useRouter()
 const docsMainRef = ref<HTMLElement | null>(null)
@@ -95,7 +98,7 @@ const articles: DocArticle[] = [
     group: '快速开始',
     title: '安装与首次启动',
     description: '下载安装 Vibebara Desktop，并确认桌面端和 CLI 可用。',
-    keywords: ['安装', '下载', 'Windows', 'CLI', 'PATH'],
+    keywords: ['安装', '下载', 'Windows', 'macOS', 'CLI', 'PATH'],
     sections: [
       {
         id: 'install-desktop',
@@ -103,17 +106,25 @@ const articles: DocArticle[] = [
         blocks: [
           {
             type: 'steps',
-            items: [
-              '下载并运行 VBB-Setup 安装包。',
-              '按安装向导完成安装，启动 Vibebara。',
-              '如需使用 CLI，安装或升级后关闭并重新打开终端。',
-            ],
+            items: isMac
+              ? [
+                  '下载 VBB-mac DMG，将 Vibebara 拖入 Applications。',
+                  '从 Applications 启动 Vibebara。',
+                  '如需使用 CLI，运行应用资源目录内的 install-cli.sh，然后重新打开终端。',
+                ]
+              : [
+                  '下载并运行 VBB-Setup 安装包。',
+                  '按安装向导完成安装，启动 Vibebara。',
+                  '如需使用 CLI，安装或升级后关闭并重新打开终端。',
+                ],
           },
           {
             type: 'callout',
             tone: 'warning',
-            title: 'Windows 安全提示',
-            text: '当前安装包尚未完成代码签名，Windows SmartScreen 可能显示安全提醒。请确认安装包来自 Vibebara 官方发布地址。',
+            title: isMac ? 'macOS 安全提示' : 'Windows 安全提示',
+            text: isMac
+              ? '未签名或未公证的内测包可能触发 Gatekeeper。正式包应具有 Developer ID 签名和 Apple 公证，请确认安装包来自官方发布地址。'
+              : '未签名内测包可能触发 Windows SmartScreen。请确认安装包来自 Vibebara 官方发布地址。',
           },
         ],
       },
@@ -121,11 +132,13 @@ const articles: DocArticle[] = [
         id: 'verify-cli',
         title: '验证 CLI',
         blocks: [
-          { type: 'paragraph', text: '重新打开 PowerShell 后执行：' },
+          { type: 'paragraph', text: `重新打开${isMac ? '终端' : ' PowerShell'}后执行：` },
           { type: 'code', code: 'vibebara --version' },
           {
             type: 'paragraph',
-            text: '如果提示找不到命令，请先重启终端，再检查 Vibebara 安装目录下的 resources\\cli。',
+            text: isMac
+              ? '如果提示找不到命令，请运行 /Applications/Vibebara.app/Contents/Resources/cli/install-cli.sh，或直接执行该目录内的 vibebara。'
+              : '如果提示找不到命令，请先重启终端，再检查 Vibebara 安装目录下的 resources\\cli。',
           },
         ],
       },
@@ -508,15 +521,23 @@ const articles: DocArticle[] = [
         blocks: [
           {
             type: 'steps',
-            items: [
-              '关闭并重新打开终端。',
-              '执行 Get-Command vibebara。',
-              '确认安装目录的 resources\\cli 中存在 vibebara.exe。',
-            ],
+            items: isMac
+              ? [
+                  '关闭并重新打开终端。',
+                  '执行 command -v vibebara。',
+                  '确认 /Applications/Vibebara.app/Contents/Resources/cli/vibebara 存在，必要时运行 install-cli.sh。',
+                ]
+              : [
+                  '关闭并重新打开终端。',
+                  '执行 Get-Command vibebara。',
+                  '确认安装目录的 resources\\cli 中存在 vibebara.exe。',
+                ],
           },
           {
             type: 'code',
-            code: '& "$env:LOCALAPPDATA\\Programs\\Vibebara\\resources\\cli\\vibebara.exe" --version',
+            code: isMac
+              ? '/Applications/Vibebara.app/Contents/Resources/cli/vibebara --version'
+              : '& "$env:LOCALAPPDATA\\Programs\\Vibebara\\resources\\cli\\vibebara.exe" --version',
           },
         ],
       },
@@ -559,11 +580,17 @@ const articles: DocArticle[] = [
         blocks: [
           {
             type: 'list',
-            items: [
-              '桌面配置与登录数据：%APPDATA%\\@vibebara\\desktop',
-              'CLI 配置：%USERPROFILE%\\.vibebara\\config.json',
-              '卸载桌面客户端不会自动删除这些用户数据。',
-            ],
+            items: isMac
+              ? [
+                  '桌面配置与登录数据：~/Library/Application Support/@vibebara/desktop',
+                  'CLI 配置：~/.vibebara/config.json',
+                  '删除应用不会自动删除这些用户数据。',
+                ]
+              : [
+                  '桌面配置与登录数据：%APPDATA%\\@vibebara\\desktop',
+                  'CLI 配置：%USERPROFILE%\\.vibebara\\config.json',
+                  '卸载桌面客户端不会自动删除这些用户数据。',
+                ],
           },
         ],
       },
@@ -588,7 +615,7 @@ const articles: DocArticle[] = [
           {
             type: 'list',
             items: [
-              '桌面客户端当前以 Windows 为主要支持平台。',
+              '桌面客户端支持 Windows 与 macOS arm64；macOS 正式分发需要签名和公证。',
               'CLI 只支持同机部署，不支持跨机自动迁移路径。',
               '全局部署副本不参与项目同步跟踪。',
               '当前测试云端可能仍使用 HTTP/WS，不应传输高敏感内容。',
@@ -807,7 +834,7 @@ onBeforeUnmount(() => {
 
               <div v-else-if="block.type === 'code'" class="doc-code">
                 <div class="doc-code-toolbar">
-                  <span>PowerShell</span>
+                  <span>{{ terminalLabel }}</span>
                   <button type="button" @click="copyCode(block.code)">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <rect x="8" y="8" width="11" height="11" rx="2" />

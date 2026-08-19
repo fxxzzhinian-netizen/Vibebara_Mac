@@ -21,6 +21,8 @@ export type AppMode = 'web' | 'desktop'
 export interface VibebaraRuntimeConfig {
   /** 运行形态：web 灰度 / desktop 桌面壳。 */
   mode: AppMode
+  /** 桌面主进程注入的可信操作系统；web 形态下不设置。 */
+  platform?: 'win32' | 'darwin' | 'linux'
   /** 云端 REST API 基址，axios baseURL。web 默认 `/api/v1`（经 Vite/反代）。 */
   cloudApiBase: string
   /**

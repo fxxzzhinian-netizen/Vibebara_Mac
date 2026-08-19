@@ -32,6 +32,7 @@ const CH = {
 
 interface RuntimeConfigPayload {
   mode: "desktop";
+  platform: "win32" | "darwin" | "linux";
   cloudApiBase: string;
   cloudWsBase: string;
   localAgentBase: string;

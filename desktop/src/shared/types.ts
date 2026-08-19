@@ -14,6 +14,8 @@
 export interface RuntimeConfigPayload {
   /** 桌面壳固定为 'desktop'（前端据此走桌面分支：orchestration=true）。 */
   mode: "desktop";
+  /** 主进程提供的可信操作系统标识，供渲染层切换安装与帮助文案。 */
+  platform: "win32" | "darwin" | "linux";
   /** 云端 REST API 基址（axios baseURL，含 /api/v1）。先指向本机 cloud demo。 */
   cloudApiBase: string;
   /** 云端 WebSocket 基址（不含路径），如 ws://127.0.0.1:8000。 */
@@ -51,9 +53,9 @@ export interface CliAuthorizationRequest {
 export interface CliAuthorizationResult {
   success: true;
   configPath: string;
-  /** 当前桌面安装包是否携带独立 vibebara.exe。 */
+  /** 当前桌面安装包是否携带独立 Vibebara CLI。 */
   cliBundled: boolean;
-  /** PATH 更新只对新终端生效。 */
+  /** CLI 安装或 PATH 更新只对新终端生效。 */
   terminalRestartRequired: boolean;
   /** 安装包内 CLI 的绝对路径；开发态缺省。 */
   cliPath?: string;

@@ -10,7 +10,7 @@
  * device_id 非鉴权凭证；云端以 Bearer 为身份并按归属校验（设计 §3.4 / §8）。
  */
 import { cloudClient } from './client'
-import { getClientUuid, setDeviceId } from '@/runtime/config'
+import { getClientUuid, getRuntimeConfig, setDeviceId } from '@/runtime/config'
 import { getDesktopBridge, isDesktop } from '@/runtime/desktopBridge'
 import { guessClientPlatform } from '@/runtime/deviceIdentity'
 
@@ -80,7 +80,7 @@ export async function ensureDeviceRegistered(): Promise<string | null> {
   try {
     const res = await registerDevice({
       clientUuid,
-      platform: guessClientPlatform() || undefined,
+      platform: getRuntimeConfig().platform || guessClientPlatform() || undefined,
     })
     if (!res.success || !res.device) {
       console.warn('[devices] 注册未成功:', res.error)

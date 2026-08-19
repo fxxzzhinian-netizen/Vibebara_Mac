@@ -15,8 +15,11 @@
   ],
   "scripts": {
     "build": "tsc",
+    "bundle": "node scripts/build-sea.cjs --bundle-only",
+    "sea": "node scripts/build-sea.cjs",
     "bundle:win": "node scripts/build-sea.cjs --bundle-only",
-    "sea:win": "node scripts/build-sea.cjs",
+    "sea:win": "node scripts/build-sea.cjs --require-platform=win32",
+    "sea:mac": "node scripts/build-sea.cjs --require-platform=darwin",
     "prepack": "npm run build",
     "lint": "tsc --noEmit",
     "test": "vitest run",
