@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
-import { toast } from '@/composables/useToast'
-import { generateSkillIntroDraft } from '@/api/skillStore'
 
 // 可复用「介绍」面板：查看态为文章样式，编辑态提供标题/分类/作者输入、
 // Markdown 正文编辑与「AI 辅助生成」。介绍内容存于 Skill 自身 config.intro。
@@ -15,47 +13,28 @@ const props = withDefaults(
     md?: string
     editing?: boolean
     skillId?: string
+    generating?: boolean
     fallbackTitle?: string
     // 是否提供「AI 辅助生成」（市场条目编辑无对应源 Skill，关闭即可）。
     aiAssist?: boolean
     // 查看态空正文占位文案。
     emptyPlaceholder?: string
   }>(),
-  { aiAssist: true },
+  { aiAssist: true, generating: false },
 )
 
 const emit = defineEmits<{
   (e: 'update', field: 'title' | 'author' | 'category' | 'md', value: string): void
+  (e: 'ai-generate'): void
 }>()
-
-const generating = ref(false)
 
 const displayTitle = computed(() => (props.title || '').trim() || props.fallbackTitle || '')
 const displayAuthor = computed(() => (props.author || '').trim())
 const displayCategory = computed(() => (props.category || '').trim())
 const authorInitial = computed(() => (displayAuthor.value || '?').slice(0, 1).toUpperCase())
 
-async function aiGenerate() {
-  if (generating.value || !props.skillId) {
-    if (!props.skillId) toast.error('请先保存 Skill 后再使用 AI 辅助生成')
-    return
-  }
-  generating.value = true
-  try {
-    const res = await generateSkillIntroDraft(props.skillId)
-    if (res.success && res.draft) {
-      if (res.draft.title) emit('update', 'title', res.draft.title)
-      if (res.draft.category) emit('update', 'category', res.draft.category)
-      if (res.draft.intro_md) emit('update', 'md', res.draft.intro_md)
-      toast.success('已生成介绍草稿，可继续编辑')
-    } else {
-      toast.error(res.error || 'AI 生成失败，可手动填写')
-    }
-  } catch (e: any) {
-    toast.error(e?.response?.data?.detail || e?.message || 'AI 生成失败，可手动填写')
-  } finally {
-    generating.value = false
-  }
+function aiGenerate() {
+  if (!props.generating) emit('ai-generate')
 }
 </script>
 

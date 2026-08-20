@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSkillStore } from '@/stores/skillStore'
 import { useAuthStore } from '@/stores/authStore'
-import { type NativeSkillItem } from '@/api/skillStore'
+import { generateSkillIntroDraft, type NativeSkillItem } from '@/api/skillStore'
 import { promptOpenAfterDeploy } from '@/utils/openAfterDeploy'
 import { formatRelativeTime } from '@/utils/relativeTime'
 import AppTopNav from '@/components/AppTopNav.vue'
@@ -28,6 +28,7 @@ const authStore = useAuthStore()
 
 const showCreateModal = ref(false)
 const publishingMarket = ref(false)
+const introGenerating = ref(false)
 
 const deployTarget = ref<'cursor' | 'codex' | 'windsurf' | 'claude' | 'kiro' | 'trae' | 'qoder' | 'workbuddy'>('cursor')
 // 部署始终落项目目录（需选目录）；勾选后「同时」再额外落一份到全局 ~/.{tool}/skills。
@@ -104,6 +105,37 @@ function setNestedField(parent: string, key: string, val: unknown) {
   if (!cfg.value) return
   const current = (cfg.value[parent] as Record<string, unknown>) ?? {}
   store.updateLocalConfig({ [parent]: { ...current, [key]: val } })
+}
+
+async function handleIntroGenerate() {
+  const targetSkillId = store.currentId
+  if (!targetSkillId) {
+    toast.error('请先保存 Skill 后再使用 AI 辅助生成')
+    return
+  }
+  if (introGenerating.value) return
+
+  introGenerating.value = true
+  try {
+    const res = await generateSkillIntroDraft(targetSkillId)
+    if (!res.success || !res.draft) {
+      toast.error(res.error || 'AI 生成失败，可手动填写')
+      return
+    }
+    if (store.currentId !== targetSkillId) {
+      toast.warning('生成期间已切换 Skill，结果未应用，请在原 Skill 中重新生成')
+      return
+    }
+
+    if (res.draft.title) setNestedField('intro', 'title', res.draft.title)
+    if (res.draft.category) setNestedField('intro', 'category', res.draft.category)
+    if (res.draft.intro_md) setNestedField('intro', 'md', res.draft.intro_md)
+    toast.success('已生成介绍草稿，可继续编辑')
+  } catch (e: any) {
+    toast.error(e?.response?.data?.detail || e?.message || 'AI 生成失败，可手动填写')
+  } finally {
+    introGenerating.value = false
+  }
 }
 
 function flashRepoMsg(msg: string) {
@@ -504,8 +536,10 @@ onMounted(() => {
               :md="cfg.intro?.md"
               :editing="!isTeamSkill"
               :skill-id="store.currentId || ''"
+              :generating="introGenerating"
               :fallback-title="cfg.name"
               @update="(f, v) => setNestedField('intro', f, v)"
+              @ai-generate="handleIntroGenerate"
             />
           </section>
 

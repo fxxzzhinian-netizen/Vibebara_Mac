@@ -9,6 +9,7 @@ import {
   getSkillVersion,
   restoreSkillVersion,
   readVersionResourceFile,
+  generateSkillIntroDraft,
   type NativeSkillDetail,
   type SkillVersionItem,
   type SkillVersionDetail,
@@ -106,6 +107,7 @@ function guardTeamSkillWrite(): boolean {
 // 编辑态（仅对团队 owner/admin 开放）
 const editing = ref(false)
 const saving = ref(false)
+const introGenerating = ref(false)
 const draft = ref<Record<string, any> | null>(null)
 const draftVibeh = ref('')
 
@@ -114,11 +116,6 @@ function startEdit() {
   draft.value = JSON.parse(JSON.stringify(cfg.value ?? {}))
   draftVibeh.value = vibeh.value
   editing.value = true
-}
-
-function cancelEdit() {
-  editing.value = false
-  draft.value = null
 }
 
 async function handlePublishToMarket() {
@@ -150,6 +147,37 @@ function setDraftNested(parent: string, key: string, val: unknown) {
   if (!draft.value) return
   const cur = (draft.value[parent] as Record<string, unknown>) ?? {}
   draft.value = { ...draft.value, [parent]: { ...cur, [key]: val } }
+}
+
+async function handleIntroGenerate() {
+  const targetSkillId = skillId.value
+  if (!targetSkillId || !draft.value) {
+    toast.error('请先保存 Skill 后再使用 AI 辅助生成')
+    return
+  }
+  if (introGenerating.value) return
+
+  introGenerating.value = true
+  try {
+    const res = await generateSkillIntroDraft(targetSkillId)
+    if (!res.success || !res.draft) {
+      toast.error(res.error || 'AI 生成失败，可手动填写')
+      return
+    }
+    if (skillId.value !== targetSkillId || !draft.value || !editing.value) {
+      toast.warning('生成期间已离开编辑页面，结果未应用，请重新生成')
+      return
+    }
+
+    if (res.draft.title) setDraftNested('intro', 'title', res.draft.title)
+    if (res.draft.category) setDraftNested('intro', 'category', res.draft.category)
+    if (res.draft.intro_md) setDraftNested('intro', 'md', res.draft.intro_md)
+    toast.success('已生成介绍草稿，可继续编辑')
+  } catch (e: any) {
+    toast.error(e?.response?.data?.detail || e?.message || 'AI 生成失败，可手动填写')
+  } finally {
+    introGenerating.value = false
+  }
 }
 
 function onResourceEdit(kind: 'scripts' | 'references' | 'assets', val: string) {
@@ -704,12 +732,24 @@ function timeAgo(ts: string | null | undefined): string {
             </div>
             <div
               class="toolbar-right"
-              :class="{ 'action-menu': !editing && canEdit && cfg }"
+              :class="{ 'action-menu': canEdit && cfg }"
             >
               <button
-                v-if="isTeamSkill && isTeamMember && cfg && !editing"
+                v-if="canEdit && cfg"
+                class="btn tool-btn save"
+                :disabled="!editing || saving"
+                :title="saving ? '保存中…' : editing ? '保存 Skill' : '请先编辑 Skill'"
+                :aria-label="saving ? '保存中' : '保存 Skill'"
+                @click="save"
+              >
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M518.528 709.973333l121.258667-122.453333a32 32 0 0 0-0.426667-45.226667 31.146667 31.146667 0 0 0-44.373333 0l-67.157334 68.266667V404.906667a31.445333 31.445333 0 1 0-62.933333 0v205.653333l-67.157333-68.266667a31.146667 31.146667 0 0 0-44.373334 0 32.426667 32.426667 0 0 0 0 45.226667l120.832 122.453333a32.768 32.768 0 0 0 22.4 9.386667 32.725333 32.725333 0 0 0 21.973334-9.386667z m306.133333-324.864c9.941333-0.128 20.736-0.256 30.592-0.256 10.965333 0 19.413333 8.533333 19.413334 19.2v343.04c0 105.813333-85.333333 191.573333-190.08 191.573334H348.714667C238.506667 938.666667 149.333333 848.64 149.333333 737.706667V277.76C149.333333 171.946667 234.24 85.333333 339.84 85.333333h225.578667c10.581333 0 19.456 8.96 19.456 19.626667v137.386667c0 78.08 63.36 142.08 141.098666 142.506666 17.834667 0 33.834667 0.128 47.786667 0.256 10.794667 0.085333 20.352 0.170667 28.672 0.170667 5.973333 0 13.824-0.085333 22.229333-0.170667z m11.818667-62.293333c-34.688 0.128-75.648 0-105.088-0.298667-46.72 0-85.205333-38.826667-85.205333-86.058666V123.989333c0-18.346667 22.101333-27.52 34.688-14.250666l124.416 130.645333 45.696 48a20.352 20.352 0 0 1-14.506667 34.432z" fill="currentColor" />
+                </svg>
+              </button>
+              <button
+                v-if="isTeamSkill && isTeamMember && cfg"
                 class="btn tool-btn publish"
-                :disabled="publishingMarket"
+                :disabled="editing || publishingMarket"
                 title="发布到 SKILL 市场"
                 :aria-label="publishingMarket ? '发布中' : '发布到市场'"
                 @click="handlePublishToMarket"
@@ -719,34 +759,28 @@ function timeAgo(ts: string | null | undefined): string {
                 </svg>
               </button>
               <template v-if="canEdit && cfg">
-                <template v-if="!editing">
-                  <button
-                    class="btn tool-btn danger"
-                    title="删除"
-                    aria-label="删除"
-                    @click="askDeleteSkill"
-                  >
-                    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <path d="M865.578667 223.701333c16.64 0 30.421333 13.781333 30.421333 31.317334v16.213333a31.146667 31.146667 0 0 1-30.421333 31.317333H158.464A31.146667 31.146667 0 0 1 128 271.232v-16.213333c0-17.536 13.824-31.317333 30.464-31.317334H282.88c25.258667 0 47.232-17.962667 52.906667-43.306666l6.528-29.098667C352.469333 111.658667 385.749333 85.333333 423.893333 85.333333h176.213334c37.717333 0 71.424 26.325333 81.152 63.872l6.954666 31.146667a54.613333 54.613333 0 0 0 52.949334 43.349333h124.416z m-63.189334 592.682667c12.970667-121.045333 35.712-408.618667 35.712-411.52a31.829333 31.829333 0 0 0-7.68-23.808 30.976 30.976 0 0 0-22.357333-9.984H216.32c-8.533333 0-16.682667 3.712-22.357333 9.984a33.706667 33.706667 0 0 0-8.106667 23.808l2.261333 27.605333c6.058667 75.221333 22.912 284.757333 33.834667 383.914667 7.68 73.045333 55.637333 118.954667 125.056 120.618667 53.589333 1.237333 108.8 1.664 165.205333 1.664 53.162667 0 107.093333-0.426667 162.346667-1.664 71.850667-1.237333 119.722667-46.336 127.872-120.618667z" fill="currentColor" />
-                    </svg>
-                  </button>
-                  <button
-                    class="btn tool-btn edit"
-                    title="编辑"
-                    aria-label="编辑"
-                    @click="startEdit"
-                  >
-                    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <path d="M400.042667 854.528l374.912-484.821333c20.352-26.112 27.605333-56.32 20.821333-87.125334-5.888-27.989333-23.082667-54.613333-48.896-74.752L683.946667 157.824c-54.784-43.562667-122.709333-38.997333-161.664 11.008l-42.069334 54.613333a16.128 16.128 0 0 0 2.688 22.442667l108.672 87.125333c7.253333 6.912 12.672 16.085333 14.08 27.093334a40.32 40.32 0 0 1-34.901333 44.458666 36.096 36.096 0 0 1-27.605333-7.765333l-111.829334-89.002667a13.354667 13.354667 0 0 0-18.133333 2.304L147.413333 654.08c-17.194667 21.546667-23.082667 49.536-17.194666 76.586667l33.962666 147.242666a17.066667 17.066667 0 0 0 16.725334 13.312l149.418666-1.834666a89.770667 89.770667 0 0 0 69.717334-34.858667z m209.237333-45.866667h243.626667c23.765333 0 43.093333 19.626667 43.093333 43.690667 0 24.106667-19.328 43.648-43.093333 43.648h-243.626667c-23.765333 0-43.093333-19.541333-43.093333-43.648s19.328-43.690667 43.093333-43.690667z" fill="currentColor" />
-                    </svg>
-                  </button>
-                </template>
-                <template v-else>
-                  <button class="btn tool-btn" :disabled="saving" @click="cancelEdit">取消</button>
-                  <button class="btn tool-btn save" :disabled="saving" @click="save">
-                    {{ saving ? '保存中...' : '保存' }}
-                  </button>
-                </template>
+                <button
+                  class="btn tool-btn danger"
+                  :disabled="editing || saving"
+                  title="删除"
+                  aria-label="删除"
+                  @click="askDeleteSkill"
+                >
+                  <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M865.578667 223.701333c16.64 0 30.421333 13.781333 30.421333 31.317334v16.213333a31.146667 31.146667 0 0 1-30.421333 31.317333H158.464A31.146667 31.146667 0 0 1 128 271.232v-16.213333c0-17.536 13.824-31.317333 30.464-31.317334H282.88c25.258667 0 47.232-17.962667 52.906667-43.306666l6.528-29.098667C352.469333 111.658667 385.749333 85.333333 423.893333 85.333333h176.213334c37.717333 0 71.424 26.325333 81.152 63.872l6.954666 31.146667a54.613333 54.613333 0 0 0 52.949334 43.349333h124.416z m-63.189334 592.682667c12.970667-121.045333 35.712-408.618667 35.712-411.52a31.829333 31.829333 0 0 0-7.68-23.808 30.976 30.976 0 0 0-22.357333-9.984H216.32c-8.533333 0-16.682667 3.712-22.357333 9.984a33.706667 33.706667 0 0 0-8.106667 23.808l2.261333 27.605333c6.058667 75.221333 22.912 284.757333 33.834667 383.914667 7.68 73.045333 55.637333 118.954667 125.056 120.618667 53.589333 1.237333 108.8 1.664 165.205333 1.664 53.162667 0 107.093333-0.426667 162.346667-1.664 71.850667-1.237333 119.722667-46.336 127.872-120.618667z" fill="currentColor" />
+                  </svg>
+                </button>
+                <button
+                  class="btn tool-btn edit"
+                  :disabled="editing || saving"
+                  :title="editing ? '正在编辑 Skill' : '编辑'"
+                  aria-label="编辑"
+                  @click="startEdit"
+                >
+                  <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M400.042667 854.528l374.912-484.821333c20.352-26.112 27.605333-56.32 20.821333-87.125334-5.888-27.989333-23.082667-54.613333-48.896-74.752L683.946667 157.824c-54.784-43.562667-122.709333-38.997333-161.664 11.008l-42.069334 54.613333a16.128 16.128 0 0 0 2.688 22.442667l108.672 87.125333c7.253333 6.912 12.672 16.085333 14.08 27.093334a40.32 40.32 0 0 1-34.901333 44.458666 36.096 36.096 0 0 1-27.605333-7.765333l-111.829334-89.002667a13.354667 13.354667 0 0 0-18.133333 2.304L147.413333 654.08c-17.194667 21.546667-23.082667 49.536-17.194666 76.586667l33.962666 147.242666a17.066667 17.066667 0 0 0 16.725334 13.312l149.418666-1.834666a89.770667 89.770667 0 0 0 69.717334-34.858667z m209.237333-45.866667h243.626667c23.765333 0 43.093333 19.626667 43.093333 43.690667 0 24.106667-19.328 43.648-43.093333 43.648h-243.626667c-23.765333 0-43.093333-19.541333-43.093333-43.648s19.328-43.690667 43.093333-43.690667z" fill="currentColor" />
+                  </svg>
+                </button>
               </template>
             </div>
           </div>
@@ -825,8 +859,10 @@ function timeAgo(ts: string | null | undefined): string {
                   :md="view.intro?.md"
                   :editing="editing"
                   :skill-id="skillId"
+                  :generating="introGenerating"
                   :fallback-title="cfg.name || skillId"
                   @update="(f, v) => setDraftNested('intro', f, v)"
+                  @ai-generate="handleIntroGenerate"
                 />
               </section>
 
@@ -1348,8 +1384,8 @@ function timeAgo(ts: string | null | undefined): string {
         仅保存：只保存内容，不创建版本。
       </p>
       <template #footer>
-        <button class="btn tool-btn" :disabled="saving" @click="showSaveConfirm = false">取消</button>
-        <button class="btn tool-btn" :disabled="saving" @click="doSave(false)">仅保存</button>
+        <button class="btn tool-btn save-secondary" :disabled="saving" @click="showSaveConfirm = false">取消</button>
+        <button class="btn tool-btn save-secondary" :disabled="saving" @click="doSave(false)">仅保存</button>
         <button class="btn tool-btn save" :disabled="saving" @click="doSave(true)">更新版本并保存</button>
       </template>
     </BaseModal>
@@ -1572,6 +1608,21 @@ function timeAgo(ts: string | null | undefined): string {
 .tool-btn.edit:hover:not(:disabled) { background: #2d2f2f; border-color: #2d2f2f; color: #ffffff; }
 .tool-btn.save { background: #0284c7; color: #ffffff; border-color: #0284c7; }
 .tool-btn.save:hover:not(:disabled) { background: #0369a1; border-color: #0369a1; color: #ffffff; box-shadow: 0 6px 14px rgba(2, 132, 199, 0.18); }
+.tool-btn.save-secondary {
+  border-color: transparent;
+  border-radius: 9px;
+  background: #f3f4f6;
+  color: #000000;
+  font-size: 13px;
+  font-weight: 500;
+}
+.tool-btn.save-secondary:hover:not(:disabled) {
+  border-color: transparent;
+  background: #e5e7eb;
+  color: #000000;
+  box-shadow: none;
+  transform: none;
+}
 .tool-btn.delete { background: #dc2626; border-color: #dc2626; color: #ffffff; }
 .tool-btn.delete:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; color: #ffffff; }
 .tool-btn.publish { background: #4f46e5; border-color: #4f46e5; color: #ffffff; }
@@ -1580,7 +1631,7 @@ function timeAgo(ts: string | null | undefined): string {
 /* 团队 Skill 查看态操作区：与个人 Skill 相同的图标菜单，触摸单项后横向展开。 */
 .toolbar-right.action-menu {
   position: relative;
-  width: 226px;
+  width: 296px;
   height: 58px;
   padding: 4px 8px;
   gap: 0;
@@ -1594,12 +1645,12 @@ function timeAgo(ts: string | null | undefined): string {
 
 .toolbar-right.action-menu:hover,
 .toolbar-right.action-menu:focus-within {
-  width: 258px;
+  width: 328px;
 }
 
 .toolbar-right.action-menu:has(.tool-btn.publish:hover),
 .toolbar-right.action-menu:has(.tool-btn.publish:focus-visible) {
-  width: 288px;
+  width: 358px;
 }
 
 .action-menu .tool-btn {
@@ -1661,6 +1712,11 @@ function timeAgo(ts: string | null | undefined): string {
   letter-spacing: 0;
 }
 
+.action-menu .tool-btn.save::before {
+  content: '保存';
+  letter-spacing: 0.18em;
+}
+
 .action-menu .tool-btn.danger::before {
   content: '删除';
   letter-spacing: 0.18em;
@@ -1701,6 +1757,18 @@ function timeAgo(ts: string | null | undefined): string {
 .action-menu .tool-btn.publish:hover:not(:disabled) {
   background: #e8e7ff;
   color: #4f46e5;
+  border-color: transparent;
+}
+
+.action-menu .tool-btn.save {
+  background: transparent;
+  color: #0284c7;
+  border-color: transparent;
+}
+
+.action-menu .tool-btn.save:hover:not(:disabled) {
+  background: #dbeefe;
+  color: #0284c7;
   border-color: transparent;
 }
 
